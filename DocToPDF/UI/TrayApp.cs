@@ -29,7 +29,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
         _notifyIcon = new NotifyIcon
         {
-            Text = "DocToPDF — Parado",
+            Text = $"DocToPDF {AppVersion.Display} — Parado",
             Icon = CreateCircleIcon(Color.Gray),
             Visible = true,
             ContextMenuStrip = menu
@@ -88,7 +88,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
             _notifyIcon.Icon = CreateCircleIcon(Color.LimeGreen);
             _notifyIcon.Text = _backend.IsRemote
                 ? "DocToPDF — Rodando (serviço)"
-                : "DocToPDF — Rodando";
+                : $"DocToPDF {AppVersion.Display} — Rodando";
             _toggleServiceItem.Text = "Parar Serviço";
         }
         else
@@ -96,7 +96,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
             _notifyIcon.Icon = CreateCircleIcon(Color.Gray);
             _notifyIcon.Text = _backend.IsRemote
                 ? "DocToPDF — Parado (serviço)"
-                : "DocToPDF — Parado";
+                : $"DocToPDF {AppVersion.Display} — Parado";
             _toggleServiceItem.Text = "Iniciar Serviço";
         }
     }

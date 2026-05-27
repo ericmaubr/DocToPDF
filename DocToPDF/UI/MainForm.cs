@@ -16,6 +16,8 @@ public partial class MainForm : Form
         _settingsStore = settingsStore;
         _backend = backend;
         InitializeComponent();
+        lblVersion.Text = AppVersion.Display;
+        Text = $"DocToPDF — Configuração ({AppVersion.Display})";
 
         var toolTip = new ToolTip();
         toolTip.SetToolTip(lblRobot, "Opcional — deixe vazio para desativar");
