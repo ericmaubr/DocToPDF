@@ -5,12 +5,30 @@ namespace DocToPDF.Core;
 
 public sealed class SettingsStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
+    };
 
     public AppSettings Settings { get; } = new();
 
-    public static string SettingsPath =>
-        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+    /// <summary>
+    /// Folder where DocToPDF.exe lives (not the single-file temp extract folder).
+    /// </summary>
+    public static string AppDirectory
+    {
+        get
+        {
+            var exeDir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (!string.IsNullOrEmpty(exeDir))
+                return exeDir;
+
+            return AppContext.BaseDirectory;
+        }
+    }
+
+    public static string SettingsPath => Path.Combine(AppDirectory, "appsettings.json");
 
     public SettingsStore() => Load();
 
