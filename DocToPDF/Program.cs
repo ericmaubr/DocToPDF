@@ -9,9 +9,6 @@ namespace DocToPDF;
 
 internal static class Program
 {
-    private const string UiMutexName = @"Global\DocToPDF.Tray.UI";
-    private static Mutex? _uiMutex;
-
     [STAThread]
     static void Main(string[] args)
     {
@@ -35,12 +32,14 @@ internal static class Program
 
     private static void RunAsTrayApp(bool uiOnly)
     {
-        if (!TryAcquireUiMutex())
-            return;
-
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+
+        if (UiInstanceHost.TryActivateExisting())
+            return;
+
+        using var uiInstance = UiInstanceHost.Start();
 
         var settingsStore = new SettingsStore();
         var useRemote = uiOnly || DocToPDFIpcClient.IsServerAvailable();
@@ -48,20 +47,21 @@ internal static class Program
         if (useRemote)
         {
             var client = new DocToPDFIpcClient();
-            if (!TryConnectWithRetry(client, attempts: 15, delayMs: 1000))
+            if (!TryConnectWithRetry(client, attempts: 20, delayMs: 500))
             {
                 MessageBox.Show(
                     "O serviço DocToPDF não está em execução ou não respondeu.\n\n" +
-                    "Aguarde alguns segundos após iniciar o serviço ou execute: DocToPDF.exe --ui\n\n" +
-                    "Se o serviço estiver parado, inicie-o em services.msc.",
-                    "DocToPDF",
+                    "Verifique em services.msc se o serviço está 'Em execução'.\n" +
+                    "Depois execute: DocToPDF.exe --ui\n\n" +
+                    "Confira também os ícones ocultos na bandeja (^ ao lado do relógio).",
+                    $"DocToPDF {AppVersion.Display}",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 return;
             }
 
             var backend = new RemoteDocToPDFBackend(client);
-            RunTrayLoop(settingsStore, backend);
+            RunTrayLoop(uiInstance, settingsStore, backend);
             return;
         }
 
@@ -69,7 +69,7 @@ internal static class Program
         {
             MessageBox.Show(
                 "Modo de interface iniciado, mas o serviço DocToPDF não está disponível.",
-                "DocToPDF",
+                $"DocToPDF {AppVersion.Display}",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             return;
@@ -80,16 +80,16 @@ internal static class Program
             pollingService.Log(message);
 
         var localBackend = new LocalDocToPDFBackend(pollingService);
-        RunTrayLoop(settingsStore, localBackend);
+        RunTrayLoop(uiInstance, settingsStore, localBackend);
     }
 
-    private static void RunTrayLoop(SettingsStore settingsStore, IDocToPDFBackend backend)
+    private static void RunTrayLoop(UiInstanceHost uiInstance, SettingsStore settingsStore, IDocToPDFBackend backend)
     {
         var mainForm = new MainForm(settingsStore, backend);
-        using var trayApp = new TrayApp(settingsStore, backend, mainForm);
+        var trayApp = new TrayApp(settingsStore, backend, mainForm);
+        uiInstance.SetActivateHandler(trayApp.ActivateFromRunningInstance);
         Application.Run(trayApp);
     }
-
 
     private static bool TryConnectWithRetry(DocToPDFIpcClient client, int attempts, int delayMs)
     {
@@ -102,20 +102,6 @@ internal static class Program
                 Thread.Sleep(delayMs);
         }
 
-        return false;
-    }
-
-    private static bool TryAcquireUiMutex()
-    {
-        _uiMutex = new Mutex(true, UiMutexName, out var created);
-        if (created)
-            return true;
-
-        MessageBox.Show(
-            $"A interface DocToPDF ({AppVersion.Display}) já está em execução na bandeja.",
-            "DocToPDF",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
         return false;
     }
 
