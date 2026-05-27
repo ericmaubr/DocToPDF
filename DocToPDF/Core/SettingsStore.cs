@@ -7,15 +7,11 @@ public sealed class SettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
         PropertyNameCaseInsensitive = true
     };
 
     public AppSettings Settings { get; } = new();
 
-    /// <summary>
-    /// Folder where DocToPDF.exe lives (not the single-file temp extract folder).
-    /// </summary>
     public static string AppDirectory
     {
         get
@@ -28,7 +24,22 @@ public sealed class SettingsStore
         }
     }
 
-    public static string SettingsPath => Path.Combine(AppDirectory, "appsettings.json");
+    /// <summary>
+    /// Ex.: C:\DocToPDF\DocToPDF.conf quando o executável é DocToPDF.exe
+    /// </summary>
+    public static string SettingsPath
+    {
+        get
+        {
+            var exePath = Environment.ProcessPath;
+            var baseName = string.IsNullOrEmpty(exePath)
+                ? "DocToPDF"
+                : Path.GetFileNameWithoutExtension(exePath);
+            return Path.Combine(AppDirectory, baseName + ".conf");
+        }
+    }
+
+    private static string LegacyJsonPath => Path.Combine(AppDirectory, "appsettings.json");
 
     public SettingsStore() => Load();
 
@@ -36,27 +47,47 @@ public sealed class SettingsStore
     {
         try
         {
-            if (!File.Exists(SettingsPath))
+            if (File.Exists(SettingsPath))
+            {
+                CopyTo(ConfSettingsFile.Load(SettingsPath), Settings);
                 return;
+            }
 
-            var json = File.ReadAllText(SettingsPath);
-            var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
-            if (loaded == null)
+            if (TryMigrateLegacyJson())
                 return;
-
-            CopyTo(loaded, Settings);
         }
         catch
         {
-            // Keep current in-memory settings.
+            // Mantém configuração em memória.
         }
     }
 
     public void Save(AppSettings source)
     {
         CopyTo(source, Settings);
-        var json = JsonSerializer.Serialize(Settings, JsonOptions);
-        File.WriteAllText(SettingsPath, json);
+        ConfSettingsFile.Save(SettingsPath, Settings);
+    }
+
+    private bool TryMigrateLegacyJson()
+    {
+        if (!File.Exists(LegacyJsonPath))
+            return false;
+
+        try
+        {
+            var json = File.ReadAllText(LegacyJsonPath);
+            var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
+            if (loaded == null)
+                return false;
+
+            CopyTo(loaded, Settings);
+            ConfSettingsFile.Save(SettingsPath, Settings);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void CopyTo(AppSettings from, AppSettings to)
