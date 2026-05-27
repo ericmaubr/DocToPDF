@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -12,10 +11,36 @@ public static class UserSessionTrayLauncher
         if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
             return;
 
-        if (TryLaunchInActiveSession(exePath))
+        if (UiInstanceHost.TryActivateExisting())
             return;
 
-        TryLaunchViaExplorer(exePath);
+        if (TryLaunchViaCmdStart(exePath))
+            return;
+
+        TryLaunchInActiveSession(exePath);
+    }
+
+    private static bool TryLaunchViaCmdStart(string exePath)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c start \"\" \"{exePath}\" --ui",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory
+            };
+
+            using var process = Process.Start(startInfo);
+            return process != null;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryLaunchInActiveSession(string exePath)
@@ -54,7 +79,7 @@ public static class UserSessionTrayLauncher
                         lpDesktop = "winsta0\\default"
                     };
 
-                    var success = CreateProcessAsUser(
+                    return CreateProcessAsUser(
                         primaryToken,
                         null,
                         commandLine,
@@ -66,8 +91,6 @@ public static class UserSessionTrayLauncher
                         Path.GetDirectoryName(exePath),
                         ref startupInfo,
                         out _);
-
-                    return success;
                 }
                 finally
                 {
@@ -85,28 +108,13 @@ public static class UserSessionTrayLauncher
         }
     }
 
-    private static void TryLaunchViaExplorer(string exePath)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(exePath, "--ui")
-            {
-                UseShellExecute = true,
-                WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory
-            });
-        }
-        catch
-        {
-            // Best-effort fallback.
-        }
-    }
-
     private const uint TOKEN_ASSIGN_PRIMARY = 0x0001;
     private const uint TOKEN_DUPLICATE = 0x0002;
     private const uint TOKEN_QUERY = 0x0008;
     private const uint TOKEN_ADJUST_DEFAULT = 0x0080;
     private const uint TOKEN_ADJUST_SESSIONID = 0x0100;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+
     private enum SECURITY_IMPERSONATION_LEVEL
     {
         SecurityImpersonation = 2

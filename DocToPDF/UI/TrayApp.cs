@@ -30,7 +30,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _notifyIcon = new NotifyIcon
         {
             Text = $"DocToPDF {AppVersion.Display} — Parado",
-            Icon = CreateCircleIcon(Color.Gray),
+            Icon = TrayIconFactory.Create(Color.Gray),
             Visible = true,
             ContextMenuStrip = menu
         };
@@ -39,6 +39,30 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _backend.LogEvent += OnBackendLog;
 
         UpdateTrayState();
+        ShowStartupNotification();
+    }
+
+    public void ActivateFromRunningInstance()
+    {
+        if (_mainForm.InvokeRequired)
+            _mainForm.BeginInvoke(ShowMainForm);
+        else
+            ShowMainForm();
+    }
+
+    private void ShowStartupNotification()
+    {
+        try
+        {
+            _notifyIcon.BalloonTipTitle = "DocToPDF";
+            _notifyIcon.BalloonTipText =
+                $"{AppVersion.Display} em execução. Se não vir o ícone, clique na seta (^) na bandeja.";
+            _notifyIcon.ShowBalloonTip(3000);
+        }
+        catch
+        {
+            // Balloon tips may be disabled by policy.
+        }
     }
 
     private void ShowMainForm()
@@ -85,32 +109,20 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
         if (_backend.IsRunning)
         {
-            _notifyIcon.Icon = CreateCircleIcon(Color.LimeGreen);
+            _notifyIcon.Icon = TrayIconFactory.Create(Color.LimeGreen);
             _notifyIcon.Text = _backend.IsRemote
-                ? "DocToPDF — Rodando (serviço)"
+                ? $"DocToPDF {AppVersion.Display} — Rodando (serviço)"
                 : $"DocToPDF {AppVersion.Display} — Rodando";
             _toggleServiceItem.Text = "Parar Serviço";
         }
         else
         {
-            _notifyIcon.Icon = CreateCircleIcon(Color.Gray);
+            _notifyIcon.Icon = TrayIconFactory.Create(Color.Gray);
             _notifyIcon.Text = _backend.IsRemote
-                ? "DocToPDF — Parado (serviço)"
+                ? $"DocToPDF {AppVersion.Display} — Parado (serviço)"
                 : $"DocToPDF {AppVersion.Display} — Parado";
             _toggleServiceItem.Text = "Iniciar Serviço";
         }
-    }
-
-    private static Icon CreateCircleIcon(Color color)
-    {
-        const int size = 16;
-        using var bitmap = new Bitmap(size, size);
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.Clear(Color.Transparent);
-        using var brush = new SolidBrush(color);
-        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        graphics.FillEllipse(brush, 1, 1, size - 2, size - 2);
-        return Icon.FromHandle(bitmap.GetHicon());
     }
 
     public new void Dispose()
