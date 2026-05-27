@@ -18,7 +18,12 @@ public sealed class DocToPDFWorkerHostedService : IHostedService
     {
         _ipcServer.Start(_pollingService);
         await _pollingService.StartAsync(cancellationToken);
-        UserSessionTrayLauncher.TryLaunchTrayUi();
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(2000, cancellationToken);
+            UserSessionTrayLauncher.TryLaunchTrayUi();
+        }, cancellationToken);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)

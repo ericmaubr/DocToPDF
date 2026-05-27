@@ -13,17 +13,26 @@ public sealed class DocToPDFIpcClient : IDisposable
 
     public event EventHandler<string>? LogReceived;
 
-    public static bool IsServerAvailable()
+    public static bool IsServerAvailable(int attempts = 5, int delayMs = 400)
     {
-        try
+        for (var i = 0; i < attempts; i++)
         {
-            using var client = new DocToPDFIpcClient();
-            return client.TryConnect(TimeSpan.FromMilliseconds(800));
+            try
+            {
+                using var client = new DocToPDFIpcClient();
+                if (client.TryConnect(TimeSpan.FromMilliseconds(1500)))
+                    return true;
+            }
+            catch
+            {
+                // Retry.
+            }
+
+            if (i < attempts - 1)
+                Thread.Sleep(delayMs);
         }
-        catch
-        {
-            return false;
-        }
+
+        return false;
     }
 
     public bool TryConnect(TimeSpan timeout)

@@ -47,11 +47,12 @@ internal static class Program
         if (useRemote)
         {
             var client = new DocToPDFIpcClient();
-            if (!client.TryConnect(TimeSpan.FromSeconds(3)))
+            if (!TryConnectWithRetry(client, attempts: 15, delayMs: 1000))
             {
                 MessageBox.Show(
                     "O serviço DocToPDF não está em execução ou não respondeu.\n\n" +
-                    "Inicie o serviço Windows ou execute o programa sem o parâmetro --ui.",
+                    "Aguarde alguns segundos após iniciar o serviço ou execute: DocToPDF.exe --ui\n\n" +
+                    "Se o serviço estiver parado, inicie-o em services.msc.",
                     "DocToPDF",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
@@ -86,6 +87,21 @@ internal static class Program
         var mainForm = new MainForm(settingsStore, backend);
         using var trayApp = new TrayApp(settingsStore, backend, mainForm);
         Application.Run(trayApp);
+    }
+
+
+    private static bool TryConnectWithRetry(DocToPDFIpcClient client, int attempts, int delayMs)
+    {
+        for (var i = 0; i < attempts; i++)
+        {
+            if (client.TryConnect(TimeSpan.FromSeconds(2)))
+                return true;
+
+            if (i < attempts - 1)
+                Thread.Sleep(delayMs);
+        }
+
+        return false;
     }
 
     private static bool TryAcquireUiMutex()

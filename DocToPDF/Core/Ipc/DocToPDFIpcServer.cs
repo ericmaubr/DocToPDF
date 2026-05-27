@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 
 namespace DocToPDF.Core.Ipc;
@@ -25,21 +27,61 @@ public sealed class DocToPDFIpcServer : IDisposable
     private void OnPollingLog(object? sender, string message) =>
         BroadcastLog(message);
 
+    private static NamedPipeServerStream CreatePipeServer()
+    {
+        var server = new NamedPipeServerStream(
+            PipeName,
+            PipeDirection.InOut,
+            NamedPipeServerStream.MaxAllowedServerInstances,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                server.SetAccessControl(CreatePipeSecurity());
+            }
+            catch
+            {
+                // Keep default ACL if adjustment fails.
+            }
+        }
+
+        return server;
+    }
+
+    private static PipeSecurity CreatePipeSecurity()
+    {
+        var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            PipeAccessRights.ReadWrite,
+            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+            PipeAccessRights.ReadWrite,
+            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        return security;
+    }
+
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            NamedPipeServerStream? server = null;
             try
             {
-                await using var server = new NamedPipeServerStream(
-                    PipeName,
-                    PipeDirection.InOut,
-                    NamedPipeServerStream.MaxAllowedServerInstances,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
-
+                server = CreatePipeServer();
                 await server.WaitForConnectionAsync(cancellationToken);
-                _ = Task.Run(() => HandleClientAsync(server, cancellationToken), cancellationToken);
+
+                var connectedServer = server;
+                server = null;
+                _ = Task.Run(() => HandleClientAsync(connectedServer, cancellationToken), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -49,6 +91,10 @@ public sealed class DocToPDFIpcServer : IDisposable
             {
                 await Task.Delay(500, cancellationToken);
             }
+            finally
+            {
+                server?.Dispose();
+            }
         }
     }
 
@@ -57,14 +103,17 @@ public sealed class DocToPDFIpcServer : IDisposable
         var clientId = Guid.NewGuid();
         try
         {
-            using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
-            using var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
-
-            string? line;
-            while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+            await using (server.ConfigureAwait(false))
             {
-                var response = ExecuteCommand(line.Trim(), clientId, writer);
-                await writer.WriteLineAsync(response);
+                using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
+                using var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+
+                string? line;
+                while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+                {
+                    var response = ExecuteCommand(line.Trim(), clientId, writer);
+                    await writer.WriteLineAsync(response);
+                }
             }
         }
         catch
@@ -74,14 +123,6 @@ public sealed class DocToPDFIpcServer : IDisposable
         finally
         {
             _logSubscribers.TryRemove(clientId, out _);
-            try
-            {
-                server.Disconnect();
-            }
-            catch
-            {
-                // Ignore.
-            }
         }
     }
 
