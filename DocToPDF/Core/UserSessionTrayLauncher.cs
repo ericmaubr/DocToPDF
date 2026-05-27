@@ -61,7 +61,7 @@ public static class UserSessionTrayLauncher
                         IntPtr.Zero,
                         IntPtr.Zero,
                         false,
-                        CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+                        CREATE_UNICODE_ENVIRONMENT,
                         environment,
                         Path.GetDirectoryName(exePath),
                         ref startupInfo,
@@ -107,8 +107,6 @@ public static class UserSessionTrayLauncher
     private const uint TOKEN_ADJUST_DEFAULT = 0x0080;
     private const uint TOKEN_ADJUST_SESSIONID = 0x0100;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
-    private const uint CREATE_NO_WINDOW = 0x08000000;
-
     private enum SECURITY_IMPERSONATION_LEVEL
     {
         SecurityImpersonation = 2

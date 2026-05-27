@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 
@@ -5,6 +6,9 @@ namespace DocToPDF.Core.Ipc;
 
 public sealed class DocToPDFIpcClient : IDisposable
 {
+    private readonly object _writeLock = new();
+    private readonly ConcurrentQueue<TaskCompletionSource<string>> _pendingResponses = new();
+
     private NamedPipeClientStream? _pipe;
     private StreamReader? _reader;
     private StreamWriter? _writer;
@@ -13,14 +17,25 @@ public sealed class DocToPDFIpcClient : IDisposable
 
     public event EventHandler<string>? LogReceived;
 
-    public static bool IsServerAvailable(int attempts = 5, int delayMs = 400)
+    public static bool IsServerAvailable(int attempts = 8, int delayMs = 500)
     {
         for (var i = 0; i < attempts; i++)
         {
             try
             {
-                using var client = new DocToPDFIpcClient();
-                if (client.TryConnect(TimeSpan.FromMilliseconds(1500)))
+                using var pipe = new NamedPipeClientStream(
+                    ".",
+                    DocToPDFIpcServer.PipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+
+                pipe.Connect(1500);
+                using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+                using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+
+                writer.WriteLine("PING");
+                var response = reader.ReadLine();
+                if (response != null && response.StartsWith("OK", StringComparison.Ordinal))
                     return true;
             }
             catch
@@ -49,13 +64,10 @@ public sealed class DocToPDFIpcClient : IDisposable
             _reader = new StreamReader(_pipe, Encoding.UTF8, leaveOpen: true);
             _writer = new StreamWriter(_pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
 
-            var subscribe = SendCommand("SUBSCRIBE_LOGS");
-            if (!subscribe.StartsWith("OK", StringComparison.Ordinal))
-                return false;
+            StartReader();
 
-            _readCts = new CancellationTokenSource();
-            _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token));
-            return true;
+            var subscribe = SendCommand("SUBSCRIBE_LOGS", timeout);
+            return subscribe.StartsWith("OK", StringComparison.Ordinal);
         }
         catch
         {
@@ -66,29 +78,54 @@ public sealed class DocToPDFIpcClient : IDisposable
 
     public bool GetIsRunning()
     {
-        var response = SendCommand("GET_STATUS");
+        var response = SendCommand("GET_STATUS", TimeSpan.FromSeconds(5));
         return response.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
     }
 
-    public void SendStart() => SendCommand("START");
+    public void SendStart() => SendCommand("START", TimeSpan.FromSeconds(5));
 
-    public void SendStop() => SendCommand("STOP");
+    public void SendStop() => SendCommand("STOP", TimeSpan.FromSeconds(5));
 
-    public void SendRestartTimer() => SendCommand("RESTART_TIMER");
+    public void SendRestartTimer() => SendCommand("RESTART_TIMER", TimeSpan.FromSeconds(5));
 
-    public void SendProcessNow() => SendCommand("PROCESS_NOW");
+    public void SendProcessNow() => SendCommand("PROCESS_NOW", TimeSpan.FromSeconds(30));
 
-    public void SendReloadSettings() => SendCommand("RELOAD_SETTINGS");
+    public void SendReloadSettings() => SendCommand("RELOAD_SETTINGS", TimeSpan.FromSeconds(5));
 
-    private string SendCommand(string command)
+    private void StartReader()
     {
-        if (_writer == null || _reader == null)
+        _readCts = new CancellationTokenSource();
+        _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token));
+    }
+
+    private string SendCommand(string command, TimeSpan timeout)
+    {
+        if (_writer == null)
             return "ERR Desconectado.";
 
-        lock (_writer)
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingResponses.Enqueue(tcs);
+
+        lock (_writeLock)
         {
             _writer.WriteLine(command);
-            return _reader.ReadLine() ?? "ERR Sem resposta.";
+        }
+
+        if (!tcs.Task.Wait(timeout))
+        {
+            DrainPending(tcs);
+            return "ERR Timeout.";
+        }
+
+        return tcs.Task.GetAwaiter().GetResult();
+    }
+
+    private void DrainPending(TaskCompletionSource<string> except)
+    {
+        while (_pendingResponses.TryDequeue(out var pending))
+        {
+            if (!ReferenceEquals(pending, except))
+                pending.TrySetResult("ERR Descartado.");
         }
     }
 
@@ -106,12 +143,19 @@ public sealed class DocToPDFIpcClient : IDisposable
                     break;
 
                 if (line.StartsWith("LOG ", StringComparison.Ordinal))
+                {
                     LogReceived?.Invoke(this, line[4..]);
+                    continue;
+                }
+
+                if (_pendingResponses.TryDequeue(out var pending))
+                    pending.TrySetResult(line);
             }
         }
         catch
         {
-            // Disconnected.
+            while (_pendingResponses.TryDequeue(out var pending))
+                pending.TrySetResult("ERR Conexão encerrada.");
         }
     }
 

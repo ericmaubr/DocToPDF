@@ -10,6 +10,7 @@ namespace DocToPDF;
 internal static class Program
 {
     private const string UiMutexName = @"Global\DocToPDF.Tray.UI";
+    private static Mutex? _uiMutex;
 
     [STAThread]
     static void Main(string[] args)
@@ -106,12 +107,15 @@ internal static class Program
 
     private static bool TryAcquireUiMutex()
     {
-        var created = false;
-        var mutex = new Mutex(true, UiMutexName, out created);
+        _uiMutex = new Mutex(true, UiMutexName, out var created);
         if (created)
             return true;
 
-        mutex.Dispose();
+        MessageBox.Show(
+            $"A interface DocToPDF ({AppVersion.Display}) já está em execução na bandeja.",
+            "DocToPDF",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
         return false;
     }
 

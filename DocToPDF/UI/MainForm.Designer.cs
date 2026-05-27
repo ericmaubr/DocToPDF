@@ -40,6 +40,7 @@ partial class MainForm
         lblLog = new Label();
         rtbLog = new RichTextBox();
         btnClearLog = new Button();
+        lblVersion = new Label();
         tblConfig.SuspendLayout();
         pnlPolling.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)numPolling).BeginInit();
@@ -184,4 +185,5 @@ partial class MainForm
     private Label lblLog = null!;
     private RichTextBox rtbLog = null!;
     private Button btnClearLog = null!;
+    private Label lblVersion = null!;
 }

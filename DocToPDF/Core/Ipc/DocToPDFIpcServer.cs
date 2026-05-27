@@ -133,6 +133,7 @@ public sealed class DocToPDFIpcServer : IDisposable
 
         return command.ToUpperInvariant() switch
         {
+            "PING" => "OK",
             "GET_STATUS" => _polling.IsRunning ? "OK RUNNING" : "OK STOPPED",
             "START" => Run(() => { _polling.StartTimer(); return "OK"; }),
             "STOP" => Run(() => { _polling.StopTimer(); return "OK"; }),
