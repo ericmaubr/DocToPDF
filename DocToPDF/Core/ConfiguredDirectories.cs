@@ -6,28 +6,17 @@ public static class ConfiguredDirectories
 {
     public static IReadOnlyList<string> EnsureExist(AppSettings settings)
     {
-        var errors = new List<string>();
+        var messages = new List<string>();
 
         foreach (var (path, name) in EnumeratePaths(settings))
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                continue;
+            EnsurePath(path, name, messages);
 
-            try
-            {
-                Directory.CreateDirectory(path.Trim());
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"❌ Não foi possível criar {name}: {ex.Message}");
-            }
-        }
-
-        return errors;
+        return messages;
     }
 
     public static bool ValidateAndCreateRequired(AppSettings settings, out string error)
     {
+        var messages = new List<string>();
         var required = new (string Path, string Name)[]
         {
             (settings.InputDirectory, "Diretório de Entrada"),
@@ -44,32 +33,54 @@ public static class ConfiguredDirectories
                 return false;
             }
 
-            try
-            {
-                Directory.CreateDirectory(path.Trim());
-            }
-            catch (Exception ex)
-            {
-                error = $"Não foi possível criar {name}: {ex.Message}";
+            if (!TryCreatePath(path, name, out error))
                 return false;
-            }
         }
 
-        if (!string.IsNullOrWhiteSpace(settings.RobotDirectory))
+        if (!string.IsNullOrWhiteSpace(settings.RobotDirectory) &&
+            !TryCreatePath(settings.RobotDirectory, "Diretório do Robô", out error))
         {
-            try
-            {
-                Directory.CreateDirectory(settings.RobotDirectory.Trim());
-            }
-            catch (Exception ex)
-            {
-                error = $"Não foi possível criar Diretório do Robô: {ex.Message}";
-                return false;
-            }
+            return false;
         }
 
         error = "";
         return true;
+    }
+
+    private static void EnsurePath(string? path, string name, List<string> messages)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var trimmed = path.Trim();
+
+        try
+        {
+            var existed = Directory.Exists(trimmed);
+            Directory.CreateDirectory(trimmed);
+
+            if (!existed)
+                messages.Add($"✅ Pasta criada: {name} — {trimmed}");
+        }
+        catch (Exception ex)
+        {
+            messages.Add($"❌ Não foi possível criar {name}: {ex.Message}");
+        }
+    }
+
+    private static bool TryCreatePath(string path, string name, out string error)
+    {
+        try
+        {
+            Directory.CreateDirectory(path.Trim());
+            error = "";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"Não foi possível criar {name}: {ex.Message}";
+            return false;
+        }
     }
 
     private static IEnumerable<(string Path, string Name)> EnumeratePaths(AppSettings settings)

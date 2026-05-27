@@ -78,6 +78,10 @@ public partial class MainForm : Form
 
         _settingsStore.Save(settings);
         _pollingService.RestartTimer();
+
+        foreach (var message in ConfiguredDirectories.EnsureExist(settings))
+            AppendLog(message);
+
         AppendLog("✅ Configurações salvas.");
     }
 
