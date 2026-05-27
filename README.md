@@ -10,13 +10,13 @@ DocToPDF/
 ├── Core/          # Polling, parsers, PDF, processamento de arquivos
 ├── Models/
 ├── UI/            # TrayApp, MainForm
-└── appsettings.json
+└── DocToPDF.conf
 ```
 
 ## Requisitos
 
 - Windows 10/11 ou Windows Server
-- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (apenas se não usar o executável self-contained)
+- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (apenas no modo framework-dependent)
 
 ## Build
 
@@ -24,13 +24,31 @@ DocToPDF/
 dotnet build DocToPDF/DocToPDF.csproj
 ```
 
-## Publicação (executável único)
+## Publicação
+
+O executável parece “grande” porque o modo **self-contained** embute o runtime .NET 8 + WinForms + bibliotecas nativas do QuestPDF (Skia). O código do app em si é pequeno.
+
+| Modo | Tamanho aprox. | Precisa instalar .NET no PC? |
+|------|----------------|------------------------------|
+| Self-contained + compressão (recomendado) | **~78 MB** (um `.exe`) | Não |
+| Self-contained sem compressão | ~173 MB | Não |
+| Framework-dependent (pasta com DLLs) | **~21 MB** no total | Sim — [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) |
+
+### Recomendado (menor `.exe` sem depender do runtime)
 
 ```bash
-dotnet publish DocToPDF/DocToPDF.csproj -r win-x64 --self-contained -p:PublishSingleFile=true -c Release
+dotnet publish DocToPDF/DocToPDF.csproj /p:PublishProfile=win-x64-compressed
 ```
 
-O `.exe` fica em `DocToPDF/bin/Release/net8.0-windows/win-x64/publish/DocToPDF.exe`.
+Saída: `DocToPDF/bin/publish/win-x64-compressed/DocToPDF.exe`
+
+### Mínimo absoluto (exige runtime instalado)
+
+```bash
+dotnet publish DocToPDF/DocToPDF.csproj /p:PublishProfile=win-x64-framework-dependent
+```
+
+Copie a pasta inteira `win-x64-fdd` para o PC de destino (não só o `.exe` de ~150 KB).
 
 ## Uso
 
