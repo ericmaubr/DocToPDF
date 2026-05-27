@@ -5,7 +5,7 @@ namespace DocToPDF.Core;
 
 public sealed class PollingService : IHostedService, IDisposable
 {
-    private readonly AppSettings _settings;
+    private readonly SettingsStore _settingsStore;
     private readonly FileProcessor _fileProcessor;
     private System.Threading.Timer? _timer;
     private readonly object _timerLock = new();
@@ -14,14 +14,15 @@ public sealed class PollingService : IHostedService, IDisposable
 
     public bool IsRunning { get; private set; }
 
-    public PollingService(AppSettings settings, FileProcessor fileProcessor)
+    public PollingService(SettingsStore settingsStore, FileProcessor fileProcessor)
     {
-        _settings = settings;
+        _settingsStore = settingsStore;
         _fileProcessor = fileProcessor;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        ReloadSettings();
         EnsureConfiguredDirectories();
         StartTimer();
         IsRunning = true;
@@ -37,9 +38,11 @@ public sealed class PollingService : IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
+    public void ReloadSettings() => _settingsStore.Load();
+
     private void EnsureConfiguredDirectories()
     {
-        foreach (var message in ConfiguredDirectories.EnsureExist(_settings))
+        foreach (var message in ConfiguredDirectories.EnsureExist(_settingsStore.Settings))
             Log(message);
     }
 
@@ -48,7 +51,7 @@ public sealed class PollingService : IHostedService, IDisposable
         lock (_timerLock)
         {
             _timer?.Dispose();
-            var intervalMs = Math.Max(1, _settings.PollingIntervalSeconds) * 1000;
+            var intervalMs = Math.Max(1, _settingsStore.Settings.PollingIntervalSeconds) * 1000;
             _timer = new System.Threading.Timer(OnTimerCallback, null, intervalMs, intervalMs);
             IsRunning = true;
         }
@@ -66,6 +69,7 @@ public sealed class PollingService : IHostedService, IDisposable
 
     public void RestartTimer()
     {
+        ReloadSettings();
         if (IsRunning)
             StartTimer();
     }
@@ -74,6 +78,7 @@ public sealed class PollingService : IHostedService, IDisposable
     {
         try
         {
+            ReloadSettings();
             _fileProcessor.ProcessAll();
         }
         catch (Exception ex)
@@ -86,6 +91,7 @@ public sealed class PollingService : IHostedService, IDisposable
     {
         try
         {
+            ReloadSettings();
             _fileProcessor.ProcessAll();
         }
         catch (Exception ex)

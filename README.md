@@ -55,7 +55,8 @@ Copie a pasta inteira `win-x64-fdd` para o PC de destino (não só o `.exe` de ~
 1. Execute `DocToPDF.exe` (modo interativo: ícone na bandeja).
 2. Abra o painel (duplo clique no ícone ou **Abrir Painel**).
 3. Configure os diretórios, salve e use **Iniciar Serviço** / **Processa Agora**.
-4. Para instalar como serviço Windows, registre o mesmo executável com `sc create` apontando para o binário; em sessão não interativa o app usa `UseWindowsService()`.
+4. **Serviço Windows:** ao iniciar o serviço, o processamento fica em segundo plano e a **bandeja** abre na sessão do usuário logado. Use o painel para **Processa Agora** e salvar o `DocToPDF.conf`. **Sair** na bandeja fecha só a interface; o serviço continua.
+5. **Sem serviço:** execute `DocToPDF.exe` — bandeja e processamento no mesmo processo; **Sair** encerra o timer.
 
 ## Amostras
 

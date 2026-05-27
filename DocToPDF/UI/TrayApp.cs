@@ -4,15 +4,16 @@ namespace DocToPDF.UI;
 
 public sealed class TrayApp : ApplicationContext, IDisposable
 {
-    private readonly PollingService _pollingService;
+    private readonly IDocToPDFBackend _backend;
     private readonly MainForm _mainForm;
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _toggleServiceItem;
     private readonly ToolStripMenuItem _processNowItem;
 
-    public TrayApp(SettingsStore settingsStore, PollingService pollingService, MainForm mainForm)
+    public TrayApp(SettingsStore settingsStore, IDocToPDFBackend backend, MainForm mainForm)
     {
-        _pollingService = pollingService;
+        _ = settingsStore;
+        _backend = backend;
         _mainForm = mainForm;
 
         _toggleServiceItem = new ToolStripMenuItem("Iniciar Serviço", null, OnToggleService);
@@ -35,7 +36,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         };
 
         _notifyIcon.DoubleClick += (_, _) => ShowMainForm();
-        _pollingService.LogEvent += (_, _) => UpdateTrayState();
+        _backend.LogEvent += OnBackendLog;
 
         UpdateTrayState();
     }
@@ -50,37 +51,52 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     private void OnToggleService(object? sender, EventArgs e)
     {
-        if (_pollingService.IsRunning)
-            _pollingService.StopTimer();
+        if (_backend.IsRunning)
+            _backend.StopTimer();
         else
-            _pollingService.StartTimer();
+            _backend.StartTimer();
 
         UpdateTrayState();
     }
 
     private void OnProcessNow(object? sender, EventArgs e) =>
-        Task.Run(() => _pollingService.ProcessNow());
+        Task.Run(() => _backend.ProcessNow());
 
     private void OnExit(object? sender, EventArgs e)
     {
-        _pollingService.StopTimer();
+        if (!_backend.IsRemote)
+            _backend.StopTimer();
+
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         Application.Exit();
     }
 
+    private void OnBackendLog(object? sender, string message)
+    {
+        if (string.IsNullOrEmpty(message))
+            UpdateTrayState();
+    }
+
     private void UpdateTrayState()
     {
-        if (_pollingService.IsRunning)
+        if (_backend.IsRemote && _backend is RemoteDocToPDFBackend remote)
+            remote.RefreshStatus();
+
+        if (_backend.IsRunning)
         {
             _notifyIcon.Icon = CreateCircleIcon(Color.LimeGreen);
-            _notifyIcon.Text = "DocToPDF — Rodando";
+            _notifyIcon.Text = _backend.IsRemote
+                ? "DocToPDF — Rodando (serviço)"
+                : "DocToPDF — Rodando";
             _toggleServiceItem.Text = "Parar Serviço";
         }
         else
         {
             _notifyIcon.Icon = CreateCircleIcon(Color.Gray);
-            _notifyIcon.Text = "DocToPDF — Parado";
+            _notifyIcon.Text = _backend.IsRemote
+                ? "DocToPDF — Parado (serviço)"
+                : "DocToPDF — Parado";
             _toggleServiceItem.Text = "Iniciar Serviço";
         }
     }
@@ -99,7 +115,9 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     public new void Dispose()
     {
+        _backend.LogEvent -= OnBackendLog;
         _notifyIcon.Dispose();
+        _backend.Dispose();
         base.Dispose();
     }
 }

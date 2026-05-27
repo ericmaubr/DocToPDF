@@ -1,4 +1,5 @@
 using DocToPDF.Core;
+using DocToPDF.Core.Ipc;
 using DocToPDF.Models;
 using DocToPDF.UI;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +9,8 @@ namespace DocToPDF;
 
 internal static class Program
 {
+    private const string UiMutexName = @"Global\DocToPDF.Tray.UI";
+
     [STAThread]
     static void Main(string[] args)
     {
@@ -25,23 +28,75 @@ internal static class Program
             return;
         }
 
-        RunAsTrayApp();
+        var uiOnly = args.Contains("--ui", StringComparer.OrdinalIgnoreCase);
+        RunAsTrayApp(uiOnly);
     }
 
-    private static void RunAsTrayApp()
+    private static void RunAsTrayApp(bool uiOnly)
     {
+        if (!TryAcquireUiMutex())
+            return;
+
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
         var settingsStore = new SettingsStore();
-        var pollingService = CreatePollingService(settingsStore.Settings);
+        var useRemote = uiOnly || DocToPDFIpcClient.IsServerAvailable();
+
+        if (useRemote)
+        {
+            var client = new DocToPDFIpcClient();
+            if (!client.TryConnect(TimeSpan.FromSeconds(3)))
+            {
+                MessageBox.Show(
+                    "O serviço DocToPDF não está em execução ou não respondeu.\n\n" +
+                    "Inicie o serviço Windows ou execute o programa sem o parâmetro --ui.",
+                    "DocToPDF",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            var backend = new RemoteDocToPDFBackend(client);
+            RunTrayLoop(settingsStore, backend);
+            return;
+        }
+
+        if (uiOnly)
+        {
+            MessageBox.Show(
+                "Modo de interface iniciado, mas o serviço DocToPDF não está disponível.",
+                "DocToPDF",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        var pollingService = CreatePollingService(settingsStore);
         foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
             pollingService.Log(message);
-        var mainForm = new MainForm(settingsStore, pollingService);
 
-        using var trayApp = new TrayApp(settingsStore, pollingService, mainForm);
+        var localBackend = new LocalDocToPDFBackend(pollingService);
+        RunTrayLoop(settingsStore, localBackend);
+    }
+
+    private static void RunTrayLoop(SettingsStore settingsStore, IDocToPDFBackend backend)
+    {
+        var mainForm = new MainForm(settingsStore, backend);
+        using var trayApp = new TrayApp(settingsStore, backend, mainForm);
         Application.Run(trayApp);
+    }
+
+    private static bool TryAcquireUiMutex()
+    {
+        var created = false;
+        var mutex = new Mutex(true, UiMutexName, out created);
+        if (created)
+            return true;
+
+        mutex.Dispose();
+        return false;
     }
 
     private static void RunAsWindowsService()
@@ -51,22 +106,22 @@ internal static class Program
             .ConfigureServices(services =>
             {
                 services.AddSingleton<SettingsStore>();
-                services.AddSingleton(sp => sp.GetRequiredService<SettingsStore>().Settings);
+                services.AddSingleton<DocToPDFIpcServer>();
                 services.AddSingleton(CreatePollingService);
-                services.AddHostedService(sp => sp.GetRequiredService<PollingService>());
+                services.AddHostedService<DocToPDFWorkerHostedService>();
             })
             .Build()
             .Run();
     }
 
-    private static PollingService CreatePollingService(AppSettings settings)
+    private static PollingService CreatePollingService(SettingsStore settingsStore)
     {
         PollingService? polling = null;
-        var fileProcessor = new FileProcessor(settings, message => polling!.Log(message));
-        polling = new PollingService(settings, fileProcessor);
+        var fileProcessor = new FileProcessor(settingsStore.Settings, message => polling!.Log(message));
+        polling = new PollingService(settingsStore, fileProcessor);
         return polling;
     }
 
     private static PollingService CreatePollingService(IServiceProvider sp) =>
-        CreatePollingService(sp.GetRequiredService<AppSettings>());
+        CreatePollingService(sp.GetRequiredService<SettingsStore>());
 }

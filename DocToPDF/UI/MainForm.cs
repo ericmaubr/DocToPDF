@@ -7,14 +7,14 @@ public partial class MainForm : Form
 {
     private const int MaxLogLines = 500;
     private readonly SettingsStore _settingsStore;
-    private readonly PollingService _pollingService;
+    private readonly IDocToPDFBackend _backend;
     private readonly List<string> _logLines = new();
     private readonly System.Windows.Forms.Timer _processCooldownTimer;
 
-    public MainForm(SettingsStore settingsStore, PollingService pollingService)
+    public MainForm(SettingsStore settingsStore, IDocToPDFBackend backend)
     {
         _settingsStore = settingsStore;
-        _pollingService = pollingService;
+        _backend = backend;
         InitializeComponent();
 
         var toolTip = new ToolTip();
@@ -29,7 +29,7 @@ public partial class MainForm : Form
         };
 
         LoadSettingsToUi();
-        _pollingService.LogEvent += OnLogEvent;
+        _backend.LogEvent += OnLogEvent;
     }
 
     private void LoadSettingsToUi()
@@ -80,7 +80,7 @@ public partial class MainForm : Form
             AppendLog(message);
 
         _settingsStore.Save(settings);
-        _pollingService.RestartTimer();
+        _backend.RestartTimer();
         AppendLog("✅ Configurações salvas.");
     }
 
@@ -89,7 +89,7 @@ public partial class MainForm : Form
         btnProcessNow.Enabled = false;
         _processCooldownTimer.Stop();
         _processCooldownTimer.Start();
-        Task.Run(() => _pollingService.ProcessNow());
+        Task.Run(() => _backend.ProcessNow());
     }
 
     private void BtnClearLog_Click(object? sender, EventArgs e)
@@ -98,8 +98,13 @@ public partial class MainForm : Form
         rtbLog.Clear();
     }
 
-    private void OnLogEvent(object? sender, string message) =>
+    private void OnLogEvent(object? sender, string message)
+    {
+        if (string.IsNullOrEmpty(message))
+            return;
+
         BeginInvoke(() => AppendLog(message));
+    }
 
     private void AppendLog(string message)
     {
@@ -138,7 +143,7 @@ public partial class MainForm : Form
         }
         else
         {
-            _pollingService.LogEvent -= OnLogEvent;
+            _backend.LogEvent -= OnLogEvent;
         }
 
         base.OnFormClosing(e);
