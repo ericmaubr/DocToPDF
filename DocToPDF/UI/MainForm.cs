@@ -70,7 +70,7 @@ public partial class MainForm : Form
     {
         var settings = ReadSettingsFromUi();
 
-        if (!ValidateAndCreateDirectories(settings, out var error))
+        if (!ConfiguredDirectories.ValidateAndCreateRequired(settings, out var error))
         {
             AppendLog($"❌ {error}");
             return;
@@ -79,52 +79,6 @@ public partial class MainForm : Form
         _settingsStore.Save(settings);
         _pollingService.RestartTimer();
         AppendLog("✅ Configurações salvas.");
-    }
-
-    private static bool ValidateAndCreateDirectories(AppSettings settings, out string error)
-    {
-        var required = new (string Path, string Name)[]
-        {
-            (settings.InputDirectory, "Diretório de Entrada"),
-            (settings.OutputDirectory, "Diretório de Saída PDF"),
-            (settings.ProcessedDirectory, "Diretório Processados"),
-            (settings.ErrorDirectory, "Diretório de Erros")
-        };
-
-        foreach (var (path, name) in required)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                error = $"{name} é obrigatório.";
-                return false;
-            }
-
-            try
-            {
-                Directory.CreateDirectory(path);
-            }
-            catch (Exception ex)
-            {
-                error = $"Não foi possível criar {name}: {ex.Message}";
-                return false;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.RobotDirectory))
-        {
-            try
-            {
-                Directory.CreateDirectory(settings.RobotDirectory);
-            }
-            catch (Exception ex)
-            {
-                error = $"Não foi possível criar Diretório do Robô: {ex.Message}";
-                return false;
-            }
-        }
-
-        error = "";
-        return true;
     }
 
     private void BtnProcessNow_Click(object? sender, EventArgs e)

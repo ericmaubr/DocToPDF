@@ -22,6 +22,7 @@ public sealed class PollingService : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        EnsureConfiguredDirectories();
         StartTimer();
         IsRunning = true;
         Log("DocToPDF — serviço iniciado.");
@@ -34,6 +35,12 @@ public sealed class PollingService : IHostedService, IDisposable
         IsRunning = false;
         Log("DocToPDF — serviço parado.");
         return Task.CompletedTask;
+    }
+
+    private void EnsureConfiguredDirectories()
+    {
+        foreach (var message in ConfiguredDirectories.EnsureExist(_settings))
+            Log(message);
     }
 
     public void StartTimer()

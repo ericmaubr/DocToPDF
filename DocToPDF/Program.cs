@@ -36,6 +36,8 @@ internal static class Program
 
         var settingsStore = new SettingsStore();
         var pollingService = CreatePollingService(settingsStore.Settings);
+        foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
+            pollingService.Log(message);
         var mainForm = new MainForm(settingsStore, pollingService);
 
         using var trayApp = new TrayApp(settingsStore, pollingService, mainForm);
