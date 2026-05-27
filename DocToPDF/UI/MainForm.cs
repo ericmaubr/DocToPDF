@@ -70,18 +70,17 @@ public partial class MainForm : Form
     {
         var settings = ReadSettingsFromUi();
 
-        if (!ConfiguredDirectories.ValidateAndCreateRequired(settings, out var error))
+        if (!ConfiguredDirectories.ValidateRequired(settings, out var error))
         {
             AppendLog($"❌ {error}");
             return;
         }
 
-        _settingsStore.Save(settings);
-        _pollingService.RestartTimer();
-
         foreach (var message in ConfiguredDirectories.EnsureExist(settings))
             AppendLog(message);
 
+        _settingsStore.Save(settings);
+        _pollingService.RestartTimer();
         AppendLog("✅ Configurações salvas.");
     }
 
