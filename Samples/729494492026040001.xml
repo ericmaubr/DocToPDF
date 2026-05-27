@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<ApuracaoDebitosDCTF>
+  <DtApuracaoDebitos>20260525</DtApuracaoDebitos>
+  <VersaoLeiaute>1.0</VersaoLeiaute>
+  <DadosIdentificadoresContribuinte>
+    <TipoInscricao>1</TipoInscricao>
+    <InscContrib>72949449000101</InscContrib>
+  </DadosIdentificadoresContribuinte>
+  <DebitosApurados>
+    <DebitoApurado>
+      <CodTrib>512301</CodTrib>
+      <CtValor>18594.06</CtValor>
+    </DebitoApurado>
+    <DebitoApurado>
+      <CodTrib>691201</CodTrib>
+      <CtValor>21520.69</CtValor>
+    </DebitoApurado>
+  </DebitosApurados>
+</ApuracaoDebitosDCTF>
