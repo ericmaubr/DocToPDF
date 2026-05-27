@@ -1,0 +1,18 @@
+{
+  "periodoApuracao": "202604",
+  "cnpj": "72949449000101",
+  "dadosContribuinte": {
+    "razaoSocial": "EMPRESA EXEMPLO LTDA",
+    "uf": "SP"
+  },
+  "debitos": [
+    {
+      "codTrib": "512301",
+      "valor": 18594.06
+    },
+    {
+      "codTrib": "691201",
+      "valor": 21520.69
+    }
+  ]
+}
