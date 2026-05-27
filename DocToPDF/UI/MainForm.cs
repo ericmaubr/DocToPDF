@@ -17,6 +17,10 @@ public partial class MainForm : Form
         _pollingService = pollingService;
         InitializeComponent();
 
+        var toolTip = new ToolTip();
+        toolTip.SetToolTip(lblRobot, "Opcional — deixe vazio para desativar");
+        toolTip.SetToolTip(txtRobot, "Opcional — deixe vazio para desativar");
+
         _processCooldownTimer = new System.Windows.Forms.Timer { Interval = 2000 };
         _processCooldownTimer.Tick += (_, _) =>
         {
