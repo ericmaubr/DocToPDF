@@ -34,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File C:\DocToPDF\repo\DocToPDF\install-tray-
 
 3. Reiniciar o serviço após publicar atualizações (`update-and-restart.ps1`).
 
-**Versão atual:** v0.3.0
+**Versão atual:** v0.3.1
 
 ## Repositório (branch `main`)
 

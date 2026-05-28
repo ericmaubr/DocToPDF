@@ -3,6 +3,10 @@ using System.Text;
 
 namespace DocToPDF.Core;
 
+/// <summary>
+/// Segunda instância envia ACTIVATE pela pipe; a primeira exibe o painel.
+/// Use junto com <see cref="SingleInstanceMutex"/>.
+/// </summary>
 public sealed class UiInstanceHost : IDisposable
 {
     public const string PipeName = "DocToPDF.UI.SINGLETON.v1";
@@ -10,13 +14,30 @@ public sealed class UiInstanceHost : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _listenerTask;
     private Action? _onActivate;
+    private readonly TaskCompletionSource _listenerReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private UiInstanceHost()
     {
         _listenerTask = Task.Run(() => ListenAsync(_cts.Token));
+        if (!_listenerReady.Task.Wait(TimeSpan.FromSeconds(5)))
+            ServiceLog.Error("UI singleton: pipe de ativação não ficou pronto a tempo.");
     }
 
-    public static bool TryActivateExisting()
+    public static bool TryActivateExisting(int attempts = 15, int delayMs = 150)
+    {
+        for (var i = 0; i < attempts; i++)
+        {
+            if (TryActivateOnce())
+                return true;
+
+            if (i < attempts - 1)
+                Thread.Sleep(delayMs);
+        }
+
+        return false;
+    }
+
+    private static bool TryActivateOnce()
     {
         try
         {
@@ -26,7 +47,7 @@ public sealed class UiInstanceHost : IDisposable
                 PipeDirection.InOut,
                 PipeOptions.None);
 
-            pipe.Connect(400);
+            pipe.Connect(800);
             using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
             using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
 
@@ -39,15 +60,14 @@ public sealed class UiInstanceHost : IDisposable
         }
     }
 
-    public static UiInstanceHost Start()
+    public static UiInstanceHost Start(Action onActivate)
     {
-        return new UiInstanceHost();
+        var host = new UiInstanceHost();
+        host.SetActivateHandler(onActivate);
+        return host;
     }
 
     public void SetActivateHandler(Action onActivate) => _onActivate = onActivate;
-
-    private static NamedPipeServerStream CreateServer() =>
-        Ipc.NamedPipeHost.CreateServer(PipeName, PipeOptions.Asynchronous);
 
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
@@ -56,7 +76,9 @@ public sealed class UiInstanceHost : IDisposable
             NamedPipeServerStream? server = null;
             try
             {
-                server = CreateServer();
+                server = Ipc.NamedPipeHost.CreateServer(PipeName, PipeOptions.Asynchronous);
+                _listenerReady.TrySetResult();
+
                 await server.WaitForConnectionAsync(cancellationToken);
 
                 var connected = server;
@@ -89,8 +111,16 @@ public sealed class UiInstanceHost : IDisposable
                 var command = reader.ReadLine();
                 if (command == "ACTIVATE")
                 {
-                    _onActivate?.Invoke();
-                    writer.WriteLine("OK");
+                    var handler = _onActivate;
+                    if (handler != null)
+                    {
+                        handler();
+                        writer.WriteLine("OK");
+                    }
+                    else
+                    {
+                        writer.WriteLine("ERR");
+                    }
                 }
                 else
                 {

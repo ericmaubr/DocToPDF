@@ -6,15 +6,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace DocToPDF;
 
-/// <summary>
-/// Um executável, três modos (recomendação Microsoft / Stephen Cleary):
-/// <list type="bullet">
-/// <item><b>Serviço</b> — worker headless na Session 0; expõe IPC.</item>
-/// <item><b>Bandeja + serviço</b> — usuário executa na sessão interativa; conecta ao pipe se o serviço estiver ativo.</item>
-/// <item><b>Standalone</b> — mesmo exe sem serviço; polling local na sessão do usuário.</item>
-/// </list>
-/// O serviço nunca exibe UI nem inicia a bandeja (isolamento Session 0).
-/// </summary>
 internal static class Program
 {
     [STAThread]
@@ -37,38 +28,39 @@ internal static class Program
         RunInteractiveTray();
     }
 
-    /// <summary>Serviço Windows ou flag explícita --service.</summary>
     private static bool IsServiceMode(string[] args) =>
         args.Contains("--service", StringComparer.OrdinalIgnoreCase) || !Environment.UserInteractive;
 
-    /// <summary>
-    /// Processo na sessão do usuário: conecta ao serviço se disponível; senão modo standalone.
-    /// --ui é aceito por compatibilidade (equivale a abrir a bandeja).
-    /// </summary>
     private static void RunInteractiveTray()
     {
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        if (UiInstanceHost.TryActivateExisting())
-            return;
-
-        using var uiInstance = UiInstanceHost.Start();
-        var settingsStore = new SettingsStore();
-
-        if (DocToPDFIpcClient.TryQuickPing())
+        if (!SingleInstanceMutex.TryAcquire(out var instanceMutex))
         {
-            var backend = new DeferredRemoteBackend();
-            RunTrayLoop(uiInstance, settingsStore, backend);
+            UiInstanceHost.TryActivateExisting();
             return;
         }
 
-        RunStandaloneTray(uiInstance, settingsStore);
+        using (instanceMutex)
+        {
+            var settingsStore = new SettingsStore();
+            var backend = CreateInteractiveBackend(settingsStore);
+
+            var mainForm = new MainForm(settingsStore, backend);
+            var trayApp = new TrayApp(settingsStore, backend, mainForm);
+
+            using var uiHost = UiInstanceHost.Start(trayApp.ActivateFromRunningInstance);
+            Application.Run(trayApp);
+        }
     }
 
-    private static void RunStandaloneTray(UiInstanceHost uiInstance, SettingsStore settingsStore)
+    private static IDocToPDFBackend CreateInteractiveBackend(SettingsStore settingsStore)
     {
+        if (DocToPDFIpcClient.TryQuickPing())
+            return new DeferredRemoteBackend();
+
         var pollingService = CreatePollingService(settingsStore);
         foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
             pollingService.Log(message);
@@ -76,16 +68,7 @@ internal static class Program
         pollingService.StartTimer();
         pollingService.Log("DocToPDF — modo local (serviço não detectado).");
 
-        var localBackend = new LocalDocToPDFBackend(pollingService);
-        RunTrayLoop(uiInstance, settingsStore, localBackend);
-    }
-
-    private static void RunTrayLoop(UiInstanceHost uiInstance, SettingsStore settingsStore, IDocToPDFBackend backend)
-    {
-        var mainForm = new MainForm(settingsStore, backend);
-        var trayApp = new TrayApp(settingsStore, backend, mainForm);
-        uiInstance.SetActivateHandler(trayApp.ActivateFromRunningInstance);
-        Application.Run(trayApp);
+        return new LocalDocToPDFBackend(pollingService);
     }
 
     private static void RunAsWindowsService()

@@ -26,6 +26,19 @@ public sealed class DocToPDFBackgroundService : BackgroundService
             await _polling.StartAsync(stoppingToken);
             ServiceLog.Info("Serviço em execução (IPC + processamento).");
 
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1500, stoppingToken);
+                    UserSessionTrayLauncher.TryLaunchTrayInUserSession();
+                }
+                catch (Exception ex)
+                {
+                    ServiceLog.Error($"Bandeja automática: {ex.Message}");
+                }
+            }, stoppingToken);
+
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
