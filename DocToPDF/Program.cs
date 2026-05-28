@@ -53,7 +53,7 @@ internal static class Program
         if (useRemote)
         {
             var client = new DocToPDFIpcClient();
-            if (!TryConnectWithRetry(client, attempts: 20, delayMs: 500))
+            if (!TryConnectWithRetry(client, attempts: 8, delayMs: 500))
             {
                 MessageBox.Show(
                     "O serviço DocToPDF não está em execução ou não respondeu.\n\n" +
@@ -84,6 +84,10 @@ internal static class Program
         var pollingService = CreatePollingService(settingsStore);
         foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
             pollingService.Log(message);
+
+        // Programa desktop inicia processamento automaticamente por padrão.
+        pollingService.StartTimer();
+        pollingService.Log("DocToPDF — processamento automático iniciado.");
 
         var localBackend = new LocalDocToPDFBackend(pollingService);
         RunTrayLoop(uiInstance, settingsStore, localBackend);
