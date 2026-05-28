@@ -48,43 +48,8 @@ public sealed class UiInstanceHost : IDisposable
 
     public void SetActivateHandler(Action onActivate) => _onActivate = onActivate;
 
-    private static NamedPipeServerStream CreateServer()
-    {
-        var security = new PipeSecurity();
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
-            PipeAccessRights.ReadWrite,
-            AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-            PipeAccessRights.ReadWrite,
-            AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-            PipeAccessRights.FullControl,
-            AccessControlType.Allow));
-
-        var server = new NamedPipeServerStream(
-            PipeName,
-            PipeDirection.InOut,
-            NamedPipeServerStream.MaxAllowedServerInstances,
-            PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous);
-
-        if (OperatingSystem.IsWindows())
-        {
-            try
-            {
-                server.SetAccessControl(security);
-            }
-            catch
-            {
-                // Keep default ACL.
-            }
-        }
-
-        return server;
-    }
+    private static NamedPipeServerStream CreateServer() =>
+        NamedPipeSecurityFactory.CreateServer(PipeName, PipeOptions.Asynchronous);
 
     private async Task ListenAsync(CancellationToken cancellationToken)
     {

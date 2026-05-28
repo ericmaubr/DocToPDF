@@ -78,10 +78,26 @@ internal static class Program
 
     private static void RunAsWindowsService()
     {
+        ServiceLog.Initialize();
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+                ServiceLog.Fatal(ex, "UnhandledException");
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            ServiceLog.Fatal(e.Exception, "UnobservedTaskException");
+            e.SetObserved();
+        };
+
         Host.CreateDefaultBuilder()
             .UseWindowsService(options => options.ServiceName = "DocToPDF")
             .ConfigureServices(services =>
             {
+                services.Configure<HostOptions>(options =>
+                    options.BackgroundServiceExceptionBehavior =
+                        BackgroundServiceExceptionBehavior.Ignore);
+
                 services.AddSingleton<SettingsStore>();
                 services.AddSingleton<DocToPDFIpcServer>();
                 services.AddSingleton(CreatePollingService);

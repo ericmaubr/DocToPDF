@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text;
 
 namespace DocToPDF.Core.Ipc;
@@ -11,6 +9,7 @@ public sealed class DocToPDFIpcServer : IDisposable
     public const string PipeName = "DocToPDF.IPC.v1";
 
     private readonly ConcurrentDictionary<Guid, StreamWriter> _logSubscribers = new();
+    private readonly object _broadcastLock = new();
     private CancellationTokenSource? _cts;
     private Task? _listenerTask;
     private PollingService? _polling;
@@ -22,52 +21,11 @@ public sealed class DocToPDFIpcServer : IDisposable
 
         _cts = new CancellationTokenSource();
         _listenerTask = Task.Run(() => ListenAsync(_cts.Token));
+        ServiceLog.Info("IPC server iniciado.");
     }
 
     private void OnPollingLog(object? sender, string message) =>
         BroadcastLog(message);
-
-    private static NamedPipeServerStream CreatePipeServer()
-    {
-        var server = new NamedPipeServerStream(
-            PipeName,
-            PipeDirection.InOut,
-            NamedPipeServerStream.MaxAllowedServerInstances,
-            PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous);
-
-        if (OperatingSystem.IsWindows())
-        {
-            try
-            {
-                server.SetAccessControl(CreatePipeSecurity());
-            }
-            catch
-            {
-                // Keep default ACL if adjustment fails.
-            }
-        }
-
-        return server;
-    }
-
-    private static PipeSecurity CreatePipeSecurity()
-    {
-        var security = new PipeSecurity();
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
-            PipeAccessRights.ReadWrite,
-            AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-            PipeAccessRights.ReadWrite,
-            AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-            PipeAccessRights.FullControl,
-            AccessControlType.Allow));
-        return security;
-    }
 
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
@@ -76,7 +34,7 @@ public sealed class DocToPDFIpcServer : IDisposable
             NamedPipeServerStream? server = null;
             try
             {
-                server = CreatePipeServer();
+                server = NamedPipeSecurityFactory.CreateServer(PipeName);
                 await server.WaitForConnectionAsync(cancellationToken);
 
                 var connectedServer = server;
@@ -87,8 +45,9 @@ public sealed class DocToPDFIpcServer : IDisposable
             {
                 break;
             }
-            catch
+            catch (Exception ex)
             {
+                ServiceLog.Error($"IPC listen: {ex.Message}");
                 await Task.Delay(500, cancellationToken);
             }
             finally
@@ -103,7 +62,7 @@ public sealed class DocToPDFIpcServer : IDisposable
         var clientId = Guid.NewGuid();
         try
         {
-            await using (server.ConfigureAwait(false))
+            using (server)
             {
                 using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
                 using var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
@@ -116,9 +75,9 @@ public sealed class DocToPDFIpcServer : IDisposable
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Client disconnected.
+            ServiceLog.Error($"IPC client: {ex.Message}");
         }
         finally
         {
@@ -170,15 +129,18 @@ public sealed class DocToPDFIpcServer : IDisposable
     private void BroadcastLog(string message)
     {
         var line = $"LOG {message}";
-        foreach (var (id, writer) in _logSubscribers)
+        lock (_broadcastLock)
         {
-            try
+            foreach (var (id, writer) in _logSubscribers)
             {
-                writer.WriteLine(line);
-            }
-            catch
-            {
-                _logSubscribers.TryRemove(id, out _);
+                try
+                {
+                    writer.WriteLine(line);
+                }
+                catch
+                {
+                    _logSubscribers.TryRemove(id, out _);
+                }
             }
         }
     }

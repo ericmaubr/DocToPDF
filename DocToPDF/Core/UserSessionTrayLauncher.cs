@@ -7,14 +7,21 @@ public static class UserSessionTrayLauncher
 {
     public static void TryLaunchTrayUi()
     {
-        var exePath = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
-            return;
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
+                return;
 
-        if (UiInstanceHost.TryActivateExisting())
-            return;
+            if (UiInstanceHost.TryActivateExisting())
+                return;
 
-        TryLaunchInActiveSession(exePath);
+            TryLaunchInActiveSession(exePath);
+        }
+        catch (Exception ex)
+        {
+            ServiceLog.Error($"Tray launcher: {ex}");
+        }
     }
 
     private static bool TryLaunchInActiveSession(string exePath)

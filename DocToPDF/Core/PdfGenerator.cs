@@ -10,13 +10,12 @@ public static class PdfGenerator
     private const string ContentFont = "Liberation Mono";
     private const string FallbackFont = "Courier New";
 
-    static PdfGenerator()
-    {
-        QuestPDF.Settings.License = LicenseType.Community;
-    }
+    private static readonly object LicenseLock = new();
+    private static bool _licenseSet;
 
     public static void Generate(DocumentNode root, string outputPath)
     {
+        EnsureLicense();
         var lines = new List<PdfLine>();
         RenderNode(root, lines, nestingLevel: 0);
 
@@ -94,6 +93,21 @@ public static class PdfGenerator
         }
 
         lines.Add(new PdfLine($"{indent}{FormatKey(node.Key)}: {node.Value}", false));
+    }
+
+    private static void EnsureLicense()
+    {
+        if (_licenseSet)
+            return;
+
+        lock (LicenseLock)
+        {
+            if (_licenseSet)
+                return;
+
+            QuestPDF.Settings.License = LicenseType.Community;
+            _licenseSet = true;
+        }
     }
 
     public static string FormatKey(string key)

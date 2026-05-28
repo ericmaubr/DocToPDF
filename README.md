@@ -107,6 +107,15 @@ Arquivos de exemplo em `Samples/`:
 - `72949449-MIT-202604.json`
 - `bad.json` (inválido, para teste de erro)
 
+
+## Diagnóstico do serviço
+
+Se a UI mostrar *Serviço DocToPDF indisponível* ou o serviço parar sozinho:
+
+1. Abra o **Visualizador de Eventos** → **Logs do Windows** → **Aplicativo** (erros `DocToPDF.exe` / `APPCRASH`).
+2. Leia o arquivo **`DocToPDF-service.log`** ao lado do executável (ex.: `C:\DocToPDF\DocToPDF-service.log`).
+3. Reinicie o serviço após atualizar para a versão mais recente do `main`.
+
 ## Verificação headless (Windows)
 
 ```bash

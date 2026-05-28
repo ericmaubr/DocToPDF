@@ -1,9 +1,8 @@
 using DocToPDF.Models;
-using Microsoft.Extensions.Hosting;
 
 namespace DocToPDF.Core;
 
-public sealed class PollingService : IHostedService, IDisposable
+public sealed class PollingService : IDisposable
 {
     private readonly SettingsStore _settingsStore;
     private readonly FileProcessor _fileProcessor;
@@ -84,6 +83,7 @@ public sealed class PollingService : IHostedService, IDisposable
         catch (Exception ex)
         {
             Log($"❌ Erro ao processar — {ex.Message}");
+            ServiceLog.Error($"ProcessNow: {ex}");
         }
     }
 
@@ -97,6 +97,7 @@ public sealed class PollingService : IHostedService, IDisposable
         catch (Exception ex)
         {
             Log($"❌ Erro no polling — {ex.Message}");
+            ServiceLog.Error($"Timer: {ex}");
         }
     }
 
