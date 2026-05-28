@@ -20,14 +20,20 @@ internal static class Program
             Environment.Exit(Verify.ProcessingVerifier.Run(samplesRoot));
         }
 
+        var uiOnly = args.Contains("--ui", StringComparer.OrdinalIgnoreCase);
+        if (uiOnly)
+        {
+            RunAsTrayApp(uiOnly: true);
+            return;
+        }
+
         if (!Environment.UserInteractive)
         {
             RunAsWindowsService();
             return;
         }
 
-        var uiOnly = args.Contains("--ui", StringComparer.OrdinalIgnoreCase);
-        RunAsTrayApp(uiOnly);
+        RunAsTrayApp(uiOnly: false);
     }
 
     private static void RunAsTrayApp(bool uiOnly)

@@ -14,33 +14,7 @@ public static class UserSessionTrayLauncher
         if (UiInstanceHost.TryActivateExisting())
             return;
 
-        if (TryLaunchViaCmdStart(exePath))
-            return;
-
         TryLaunchInActiveSession(exePath);
-    }
-
-    private static bool TryLaunchViaCmdStart(string exePath)
-    {
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = $"/c start \"\" \"{exePath}\" --ui",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-                WorkingDirectory = Path.GetDirectoryName(exePath) ?? Environment.CurrentDirectory
-            };
-
-            using var process = Process.Start(startInfo);
-            return process != null;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static bool TryLaunchInActiveSession(string exePath)
