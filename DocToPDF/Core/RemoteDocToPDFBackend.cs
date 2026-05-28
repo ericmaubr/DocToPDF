@@ -11,7 +11,7 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
     {
         _client = client;
         _client.LogReceived += OnLogReceived;
-        _isRunning = _client.GetIsRunning();
+        RefreshStatus();
     }
 
     public bool IsRemote => true;
@@ -23,23 +23,20 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
     public void StartTimer()
     {
         _client.SendStart();
-        _isRunning = true;
-        RaiseStateChanged();
+        RefreshStatus();
     }
 
     public void StopTimer()
     {
         _client.SendStop();
-        _isRunning = false;
-        RaiseStateChanged();
+        RefreshStatus();
     }
 
     public void RestartTimer()
     {
         _client.SendReloadSettings();
         _client.SendRestartTimer();
-        _isRunning = _client.GetIsRunning();
-        RaiseStateChanged();
+        RefreshStatus();
     }
 
     public void ProcessNow() => _client.SendProcessNow();
@@ -49,7 +46,6 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
     public void RefreshStatus()
     {
         _isRunning = _client.GetIsRunning();
-        RaiseStateChanged();
     }
 
     public void Dispose()
@@ -60,15 +56,12 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
 
     private void OnLogReceived(object? sender, string message)
     {
-        LogEvent?.Invoke(this, message);
         if (message.Contains("serviço iniciado", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("serviço parado", StringComparison.OrdinalIgnoreCase))
         {
-            _isRunning = _client.GetIsRunning();
-            RaiseStateChanged();
+            RefreshStatus();
         }
-    }
 
-    private void RaiseStateChanged() =>
-        LogEvent?.Invoke(this, string.Empty);
+        LogEvent?.Invoke(this, message);
+    }
 }

@@ -9,6 +9,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _toggleServiceItem;
     private readonly ToolStripMenuItem _processNowItem;
+    private readonly System.Windows.Forms.Timer _statusTimer;
 
     public TrayApp(SettingsStore settingsStore, IDocToPDFBackend backend, MainForm mainForm)
     {
@@ -37,6 +38,10 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
         _notifyIcon.DoubleClick += (_, _) => ShowMainForm();
         _backend.LogEvent += OnBackendLog;
+
+        _statusTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+        _statusTimer.Tick += (_, _) => UpdateTrayState();
+        _statusTimer.Start();
 
         UpdateTrayState();
         ShowStartupNotification();
@@ -98,7 +103,9 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     private void OnBackendLog(object? sender, string message)
     {
-        if (string.IsNullOrEmpty(message))
+        if (_mainForm.IsHandleCreated)
+            _mainForm.BeginInvoke(UpdateTrayState);
+        else
             UpdateTrayState();
     }
 
@@ -127,6 +134,8 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     public new void Dispose()
     {
+        _statusTimer.Stop();
+        _statusTimer.Dispose();
         _backend.LogEvent -= OnBackendLog;
         _notifyIcon.Dispose();
         _backend.Dispose();
