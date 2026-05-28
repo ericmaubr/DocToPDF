@@ -7,11 +7,12 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
     private readonly DocToPDFIpcClient _client;
     private bool _isRunning;
 
-    public RemoteDocToPDFBackend(DocToPDFIpcClient client)
+    public RemoteDocToPDFBackend(DocToPDFIpcClient client, bool refreshStatusOnConnect = true)
     {
         _client = client;
         _client.LogReceived += OnLogReceived;
-        RefreshStatus();
+        if (refreshStatusOnConnect)
+            RefreshStatus();
     }
 
     public bool IsRemote => true;

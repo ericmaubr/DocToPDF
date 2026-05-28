@@ -23,7 +23,7 @@ internal static class Program
         var uiOnly = args.Contains("--ui", StringComparer.OrdinalIgnoreCase);
         if (uiOnly)
         {
-            RunAsTrayApp(uiOnly: true);
+            RunAsTrayApp(useServiceBackend: true);
             return;
         }
 
@@ -33,10 +33,11 @@ internal static class Program
             return;
         }
 
-        RunAsTrayApp(uiOnly: false);
+        var serviceRunning = DocToPDFIpcClient.TryQuickPing();
+        RunAsTrayApp(useServiceBackend: serviceRunning);
     }
 
-    private static void RunAsTrayApp(bool uiOnly)
+    private static void RunAsTrayApp(bool useServiceBackend)
     {
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
@@ -48,36 +49,11 @@ internal static class Program
         using var uiInstance = UiInstanceHost.Start();
 
         var settingsStore = new SettingsStore();
-        var useRemote = uiOnly || DocToPDFIpcClient.IsServerAvailable();
 
-        if (useRemote)
+        if (useServiceBackend)
         {
-            var client = new DocToPDFIpcClient();
-            if (!TryConnectWithRetry(client, attempts: 8, delayMs: 500))
-            {
-                MessageBox.Show(
-                    "O serviço DocToPDF não está em execução ou não respondeu.\n\n" +
-                    "Verifique em services.msc se o serviço está 'Em execução'.\n" +
-                    "Depois execute: DocToPDF.exe --ui\n\n" +
-                    "Confira também os ícones ocultos na bandeja (^ ao lado do relógio).",
-                    $"DocToPDF {AppVersion.Display}",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
-
-            var backend = new RemoteDocToPDFBackend(client);
+            var backend = new DeferredRemoteBackend();
             RunTrayLoop(uiInstance, settingsStore, backend);
-            return;
-        }
-
-        if (uiOnly)
-        {
-            MessageBox.Show(
-                "Modo de interface iniciado, mas o serviço DocToPDF não está disponível.",
-                $"DocToPDF {AppVersion.Display}",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
             return;
         }
 
@@ -85,7 +61,6 @@ internal static class Program
         foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
             pollingService.Log(message);
 
-        // Programa desktop inicia processamento automaticamente por padrão.
         pollingService.StartTimer();
         pollingService.Log("DocToPDF — processamento automático iniciado.");
 
@@ -99,20 +74,6 @@ internal static class Program
         var trayApp = new TrayApp(settingsStore, backend, mainForm);
         uiInstance.SetActivateHandler(trayApp.ActivateFromRunningInstance);
         Application.Run(trayApp);
-    }
-
-    private static bool TryConnectWithRetry(DocToPDFIpcClient client, int attempts, int delayMs)
-    {
-        for (var i = 0; i < attempts; i++)
-        {
-            if (client.TryConnect(TimeSpan.FromSeconds(2)))
-                return true;
-
-            if (i < attempts - 1)
-                Thread.Sleep(delayMs);
-        }
-
-        return false;
     }
 
     private static void RunAsWindowsService()

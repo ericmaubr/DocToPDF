@@ -111,7 +111,9 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     private void UpdateTrayState()
     {
-        if (_backend.IsRemote && _backend is RemoteDocToPDFBackend remote)
+        if (_backend is DeferredRemoteBackend deferred)
+            deferred.RefreshStatus();
+        else if (_backend is RemoteDocToPDFBackend remote)
             remote.RefreshStatus();
 
         if (_backend.IsRunning)

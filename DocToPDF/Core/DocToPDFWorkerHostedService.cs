@@ -21,7 +21,7 @@ public sealed class DocToPDFWorkerHostedService : IHostedService
 
         _ = Task.Run(async () =>
         {
-            await Task.Delay(2000, cancellationToken);
+            await Task.Delay(400, cancellationToken);
             UserSessionTrayLauncher.TryLaunchTrayUi();
         }, cancellationToken);
     }

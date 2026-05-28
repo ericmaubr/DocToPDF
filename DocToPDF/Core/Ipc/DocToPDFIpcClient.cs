@@ -17,37 +17,31 @@ public sealed class DocToPDFIpcClient : IDisposable
 
     public event EventHandler<string>? LogReceived;
 
-    public static bool IsServerAvailable(int attempts = 8, int delayMs = 500)
+    /// <summary>
+    /// Uma tentativa rápida para saber se o pipe do serviço está ativo (não bloqueia a UI).
+    /// </summary>
+    public static bool TryQuickPing(int connectMs = 250)
     {
-        for (var i = 0; i < attempts; i++)
+        try
         {
-            try
-            {
-                using var pipe = new NamedPipeClientStream(
-                    ".",
-                    DocToPDFIpcServer.PipeName,
-                    PipeDirection.InOut,
-                    PipeOptions.Asynchronous);
+            using var pipe = new NamedPipeClientStream(
+                ".",
+                DocToPDFIpcServer.PipeName,
+                PipeDirection.InOut,
+                PipeOptions.Asynchronous);
 
-                pipe.Connect(1500);
-                using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
-                using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+            pipe.Connect(connectMs);
+            using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+            using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
 
-                writer.WriteLine("PING");
-                var response = reader.ReadLine();
-                if (response != null && response.StartsWith("OK", StringComparison.Ordinal))
-                    return true;
-            }
-            catch
-            {
-                // Retry.
-            }
-
-            if (i < attempts - 1)
-                Thread.Sleep(delayMs);
+            writer.WriteLine("PING");
+            var response = reader.ReadLine();
+            return response != null && response.StartsWith("OK", StringComparison.Ordinal);
         }
-
-        return false;
+        catch
+        {
+            return false;
+        }
     }
 
     public bool TryConnect(TimeSpan timeout)
@@ -78,19 +72,19 @@ public sealed class DocToPDFIpcClient : IDisposable
 
     public bool GetIsRunning()
     {
-        var response = SendCommand("GET_STATUS", TimeSpan.FromSeconds(5));
+        var response = SendCommand("GET_STATUS", TimeSpan.FromSeconds(2));
         return response.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
     }
 
-    public void SendStart() => SendCommand("START", TimeSpan.FromSeconds(5));
+    public void SendStart() => SendCommand("START", TimeSpan.FromSeconds(2));
 
-    public void SendStop() => SendCommand("STOP", TimeSpan.FromSeconds(5));
+    public void SendStop() => SendCommand("STOP", TimeSpan.FromSeconds(2));
 
-    public void SendRestartTimer() => SendCommand("RESTART_TIMER", TimeSpan.FromSeconds(5));
+    public void SendRestartTimer() => SendCommand("RESTART_TIMER", TimeSpan.FromSeconds(2));
 
     public void SendProcessNow() => SendCommand("PROCESS_NOW", TimeSpan.FromSeconds(30));
 
-    public void SendReloadSettings() => SendCommand("RELOAD_SETTINGS", TimeSpan.FromSeconds(5));
+    public void SendReloadSettings() => SendCommand("RELOAD_SETTINGS", TimeSpan.FromSeconds(2));
 
     private void StartReader()
     {
