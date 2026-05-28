@@ -9,6 +9,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
     private readonly IDocToPDFBackend _backend;
     private readonly MainForm _mainForm;
     private readonly NotifyIcon _notifyIcon;
+    private readonly ToolStripMenuItem _modeMenuItem;
     private readonly ToolStripMenuItem _toggleServiceItem;
     private readonly ToolStripMenuItem _processNowItem;
     private readonly System.Windows.Forms.Timer _statusTimer;
@@ -20,10 +21,13 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _backend = backend;
         _mainForm = mainForm;
 
+        _modeMenuItem = new ToolStripMenuItem { Enabled = false };
         _toggleServiceItem = new ToolStripMenuItem("Iniciar Serviço", null, OnToggleService);
         _processNowItem = new ToolStripMenuItem("Processa Agora", null, OnProcessNow);
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add(_modeMenuItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Abrir Painel", null, (_, _) => ShowMainForm());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_toggleServiceItem);
@@ -33,7 +37,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
         _notifyIcon = new NotifyIcon
         {
-            Text = $"DocToPDF {AppVersion.Display} — Parado",
+            Text = $"DocToPDF {AppVersion.Display}",
             Icon = TrayIconFactory.Create(Color.Gray),
             Visible = true,
             ContextMenuStrip = menu
@@ -62,11 +66,11 @@ public sealed class TrayApp : ApplicationContext, IDisposable
     {
         try
         {
-            _notifyIcon.BalloonTipTitle = "DocToPDF";
-            _notifyIcon.BalloonTipText = _session.UsesServiceBackend
-                ? $"{AppVersion.Display} — conectado ao serviço. Ícone na bandeja (^ se oculto)."
-                : $"{AppVersion.Display} — modo local. Ícone na bandeja (^ se oculto).";
-            _notifyIcon.ShowBalloonTip(3000);
+            var mode = AppRunMode.Describe(_backend);
+            _notifyIcon.BalloonTipTitle = $"DocToPDF — {mode}";
+            _notifyIcon.BalloonTipText =
+                $"{AppVersion.Display}. Verde = serviço; azul = local; amarelo = conectando. (^ na bandeja se oculto).";
+            _notifyIcon.ShowBalloonTip(4000);
         }
         catch
         {
@@ -123,27 +127,17 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         else if (_backend is RemoteDocToPDFBackend remote)
             remote.RefreshStatus();
 
-        if (_backend.IsRunning)
-        {
-            _notifyIcon.Icon = TrayIconFactory.Create(Color.LimeGreen);
-            _notifyIcon.Text = _backend.IsRemote
-                ? $"DocToPDF {AppVersion.Display} — Rodando (serviço)"
-                : $"DocToPDF {AppVersion.Display} — Rodando";
-            _toggleServiceItem.Text = "Parar Serviço";
-        }
-        else
-        {
-            _notifyIcon.Icon = TrayIconFactory.Create(Color.Gray);
-            _notifyIcon.Text = _backend.IsRemote
-                ? $"DocToPDF {AppVersion.Display} — Parado (serviço)"
-                : $"DocToPDF {AppVersion.Display} — Parado";
-            _toggleServiceItem.Text = "Iniciar Serviço";
-        }
+        var isRunning = _backend.IsRunning;
+        var modeLabel = AppRunMode.Describe(_backend);
+
+        _modeMenuItem.Text = $"Modo: {modeLabel}";
+        _mainForm.UpdateRunModeDisplay();
+
+        _notifyIcon.Icon = TrayIconFactory.Create(AppRunMode.TrayIndicatorColor(_backend, isRunning));
+        _notifyIcon.Text = $"DocToPDF {AppVersion.Display} — {AppRunMode.TrayStatusSuffix(_backend, isRunning)}";
+        _toggleServiceItem.Text = isRunning ? "Parar Serviço" : "Iniciar Serviço";
     }
 
-  /// <summary>
-    /// Bandeja aberta pelo serviço encerra quando o serviço Windows para (evita processamento órfão).
-    /// </summary>
     private bool CheckServiceStopped()
     {
         if (!DocToPDFIpcClient.TryQuickPing())

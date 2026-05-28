@@ -16,8 +16,7 @@ public partial class MainForm : Form
         _settingsStore = settingsStore;
         _backend = backend;
         InitializeComponent();
-        lblVersion.Text = AppVersion.Display;
-        Text = $"DocToPDF — Configuração ({AppVersion.Display})";
+        UpdateRunModeDisplay();
 
         var toolTip = new ToolTip();
         toolTip.SetToolTip(lblRobot, "Opcional — deixe vazio para desativar");
@@ -32,6 +31,13 @@ public partial class MainForm : Form
 
         LoadSettingsToUi();
         _backend.LogEvent += OnLogEvent;
+    }
+
+    public void UpdateRunModeDisplay()
+    {
+        var mode = AppRunMode.Describe(_backend);
+        lblVersion.Text = $"{AppVersion.Display} — {mode}";
+        Text = $"DocToPDF — Configuração — {mode}";
     }
 
     private void LoadSettingsToUi()
