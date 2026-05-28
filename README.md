@@ -1,10 +1,10 @@
 # DocToPDF
 
-Aplicativo Windows (.NET 8) que monitora pastas e converte arquivos **XML** e **JSON** em PDF (QuestPDF). Inclui serviço Windows, bandeja do sistema e painel de configuração.
+Aplicação Windows (.NET 8) que monitora uma pasta de entrada, converte arquivos `.xml` e `.json` em PDFs legíveis para robôs e oferece ícone na bandeja do sistema com painel de configuração.
 
-## Desenvolvimento
+## Repositório (branch `main`)
 
-Todo o código ativo fica na branch **`main`**. Não usamos branches de feature no dia a dia — clone, altere e faça push direto no `main`.
+Todo o desenvolvimento ativo é feito na branch **`main`**. Clone, trabalhe e faça push direto nela — não há fluxo com branches de feature.
 
 ```bash
 git clone https://github.com/ericmaubr/DocToPDF.git
@@ -13,42 +13,102 @@ git checkout main
 git pull
 ```
 
-### Build local
+**Versão atual no código:** v0.2.10 (bandeja instantânea; IPC com o serviço em segundo plano).
+
+## Estrutura
+
+```
+DocToPDF/
+├── Program.cs
+├── Core/          # Polling, parsers, PDF, processamento de arquivos
+├── Models/
+├── UI/            # TrayApp, MainForm
+└── DocToPDF.conf
+```
+
+## Requisitos
+
+- Windows 10/11 ou Windows Server
+- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (apenas no modo framework-dependent)
+
+## Build
 
 ```bash
-dotnet build DocToPDF/DocToPDF.csproj -c Release
+dotnet build DocToPDF/DocToPDF.csproj
 ```
-
-### Publicar (Windows, single-file)
-
-```bash
-dotnet publish DocToPDF/DocToPDF.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
-```
-
-### Testar conversão (amostras)
-
-```bash
-dotnet run --project DocToPDF/DocToPDF.csproj -c Release -- --verify Samples
-```
-
-### Atualizar instalação no Windows
-
-Com o repositório em `C:\DocToPDF\repo` e o programa em `C:\DocToPDF`:
-
-```powershell
-git -C C:\DocToPDF\repo checkout main
-git -C C:\DocToPDF\repo pull
-.\DocToPDF\update-and-restart.ps1 -RepoRoot C:\DocToPDF\repo -InstallDir C:\DocToPDF
-```
-
-## Configuração
-
-Arquivo `DocToPDF.conf` (formato chave=valor) ao lado do executável. Ver `DocToPDF/DocToPDF.conf` de exemplo no projeto.
-
-## Versão atual
-
-**v0.2.10** — bandeja abre imediatamente; conexão com o serviço em segundo plano.
 
 ## CI
 
-Push em `main` dispara o workflow [.github/workflows/build.yml](.github/workflows/build.yml) (compilação Release).
+Push ou pull request em `main` dispara [.github/workflows/build.yml](.github/workflows/build.yml) (compilação Release no GitHub Actions).
+
+## Atualização rápida no Windows (script)
+
+Arquivo: `DocToPDF/update-and-restart.ps1`
+
+Executar no **PowerShell como Administrador**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\DocToPDF\repo\DocToPDF\update-and-restart.ps1 `
+  -RepoRoot C:\DocToPDF\repo `
+  -InstallDir C:\DocToPDF `
+  -Variant compressed `
+  -StartTrayUi
+```
+
+O script:
+
+1. para o serviço `DocToPDF`
+2. encerra processos `DocToPDF.exe` antigos
+3. faz `git pull` na branch `main` do repositório
+4. executa `dotnet publish` (comprimido ou full)
+5. copia `DocToPDF.exe` e `DocToPDF.conf` para `C:\DocToPDF`
+6. inicia o serviço novamente
+7. opcionalmente abre a UI com `--ui`
+
+## Publicação
+
+O executável parece “grande” porque o modo **self-contained** embute o runtime .NET 8 + WinForms + bibliotecas nativas do QuestPDF (Skia). O código do app em si é pequeno.
+
+| Modo | Tamanho aprox. | Precisa instalar .NET no PC? |
+|------|----------------|------------------------------|
+| Self-contained + compressão (recomendado) | **~78 MB** (um `.exe`) | Não |
+| Self-contained sem compressão | ~173 MB | Não |
+| Framework-dependent (pasta com DLLs) | **~21 MB** no total | Sim — [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) |
+
+### Recomendado (menor `.exe` sem depender do runtime)
+
+```bash
+dotnet publish DocToPDF/DocToPDF.csproj /p:PublishProfile=win-x64-compressed
+```
+
+Saída: `DocToPDF/bin/publish/win-x64-compressed/DocToPDF.exe`
+
+### Mínimo absoluto (exige runtime instalado)
+
+```bash
+dotnet publish DocToPDF/DocToPDF.csproj /p:PublishProfile=win-x64-framework-dependent
+```
+
+Copie a pasta inteira `win-x64-fdd` para o PC de destino (não só o `.exe` de ~150 KB).
+
+## Uso
+
+1. Execute `DocToPDF.exe` (modo interativo: ícone na bandeja).
+2. Abra o painel (duplo clique no ícone ou **Abrir Painel**).
+3. Configure os diretórios, salve e use **Iniciar Serviço** / **Processa Agora**.
+4. **Serviço Windows:** ao iniciar o serviço, o processamento fica em segundo plano e a **bandeja** abre na sessão do usuário logado. Use o painel para **Processa Agora** e salvar o `DocToPDF.conf`. **Sair** na bandeja fecha só a interface; o serviço continua.
+5. **Sem serviço:** execute `DocToPDF.exe` — bandeja e processamento no mesmo processo; **Sair** encerra o timer.
+
+## Amostras
+
+Arquivos de exemplo em `Samples/`:
+
+- `729494492026040001.xml` (encoding `iso-8859-1`)
+- `72949449-MIT-202604.json`
+- `bad.json` (inválido, para teste de erro)
+
+## Verificação headless (Windows)
+
+```bash
+DocToPDF.exe --verify C:\caminho\para\Samples
+```
