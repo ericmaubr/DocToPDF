@@ -1,19 +1,22 @@
 using DocToPDF.Core;
+using DocToPDF.Core.Ipc;
 
 namespace DocToPDF.UI;
 
 public sealed class TrayApp : ApplicationContext, IDisposable
 {
+    private readonly InteractiveSession _session;
     private readonly IDocToPDFBackend _backend;
     private readonly MainForm _mainForm;
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _toggleServiceItem;
     private readonly ToolStripMenuItem _processNowItem;
     private readonly System.Windows.Forms.Timer _statusTimer;
+    private int _missedServicePings;
 
-    public TrayApp(SettingsStore settingsStore, IDocToPDFBackend backend, MainForm mainForm)
+    public TrayApp(InteractiveSession session, IDocToPDFBackend backend, MainForm mainForm)
     {
-        _ = settingsStore;
+        _session = session;
         _backend = backend;
         _mainForm = mainForm;
 
@@ -60,8 +63,9 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         try
         {
             _notifyIcon.BalloonTipTitle = "DocToPDF";
-            _notifyIcon.BalloonTipText =
-                $"{AppVersion.Display} em execução. Se não vir o ícone, clique na seta (^) na bandeja.";
+            _notifyIcon.BalloonTipText = _session.UsesServiceBackend
+                ? $"{AppVersion.Display} — conectado ao serviço. Ícone na bandeja (^ se oculto)."
+                : $"{AppVersion.Display} — modo local. Ícone na bandeja (^ se oculto).";
             _notifyIcon.ShowBalloonTip(3000);
         }
         catch
@@ -111,6 +115,9 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     private void UpdateTrayState()
     {
+        if (_session.UsesServiceBackend && CheckServiceStopped())
+            return;
+
         if (_backend is DeferredRemoteBackend deferred)
             deferred.RefreshStatus();
         else if (_backend is RemoteDocToPDFBackend remote)
@@ -132,6 +139,39 @@ public sealed class TrayApp : ApplicationContext, IDisposable
                 : $"DocToPDF {AppVersion.Display} — Parado";
             _toggleServiceItem.Text = "Iniciar Serviço";
         }
+    }
+
+  /// <summary>
+    /// Bandeja aberta pelo serviço encerra quando o serviço Windows para (evita processamento órfão).
+    /// </summary>
+    private bool CheckServiceStopped()
+    {
+        if (!DocToPDFIpcClient.TryQuickPing())
+            _missedServicePings++;
+        else
+            _missedServicePings = 0;
+
+        if (_missedServicePings < 2)
+            return false;
+
+        _session.StopLocalProcessing();
+        _backend.StopTimer();
+
+        try
+        {
+            _notifyIcon.BalloonTipTitle = "DocToPDF";
+            _notifyIcon.BalloonTipText =
+                "Serviço Windows parado. A bandeja será fechada. " +
+                "Para modo local, execute DocToPDF.exe com o serviço desligado.";
+            _notifyIcon.ShowBalloonTip(4000);
+        }
+        catch
+        {
+            // Ignore.
+        }
+
+        Application.Exit();
+        return true;
     }
 
     public new void Dispose()

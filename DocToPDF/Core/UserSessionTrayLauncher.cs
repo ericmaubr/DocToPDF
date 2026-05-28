@@ -57,7 +57,7 @@ public static class UserSessionTrayLauncher
 
                 try
                 {
-                    var commandLine = $"\"{exePath}\"";
+                    var commandLine = $"\"{exePath}\" --attach-service";
                     var startupInfo = new STARTUPINFO
                     {
                         cb = Marshal.SizeOf<STARTUPINFO>(),

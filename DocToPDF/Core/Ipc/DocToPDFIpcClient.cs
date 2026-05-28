@@ -70,11 +70,11 @@ public sealed class DocToPDFIpcClient : IDisposable
         }
     }
 
-    public bool GetIsRunning()
-    {
-        var response = SendCommand("GET_STATUS", TimeSpan.FromSeconds(2));
-        return response.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
-    }
+    public bool GetIsRunning() =>
+        GetStatusResponse().Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
+
+    public string GetStatusResponse() =>
+        SendCommand("GET_STATUS", TimeSpan.FromSeconds(2));
 
     public void SendStart() => SendCommand("START", TimeSpan.FromSeconds(2));
 

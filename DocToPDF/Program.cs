@@ -25,13 +25,14 @@ internal static class Program
             return;
         }
 
-        RunInteractiveTray();
+        var attachToService = args.Contains("--attach-service", StringComparer.OrdinalIgnoreCase);
+        RunInteractiveTray(attachToService);
     }
 
     private static bool IsServiceMode(string[] args) =>
         args.Contains("--service", StringComparer.OrdinalIgnoreCase) || !Environment.UserInteractive;
 
-    private static void RunInteractiveTray()
+    private static void RunInteractiveTray(bool attachToService)
     {
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
@@ -45,30 +46,14 @@ internal static class Program
 
         using (instanceMutex)
         {
-            var settingsStore = new SettingsStore();
-            var backend = CreateInteractiveBackend(settingsStore);
-
-            var mainForm = new MainForm(settingsStore, backend);
-            var trayApp = new TrayApp(settingsStore, backend, mainForm);
+            using var session = new InteractiveSession(new SettingsStore(), attachToService);
+            var backend = session.CreateBackend();
+            var mainForm = new MainForm(session.SettingsStore, backend);
+            var trayApp = new TrayApp(session, backend, mainForm);
 
             using var uiHost = UiInstanceHost.Start(trayApp.ActivateFromRunningInstance);
             Application.Run(trayApp);
         }
-    }
-
-    private static IDocToPDFBackend CreateInteractiveBackend(SettingsStore settingsStore)
-    {
-        if (DocToPDFIpcClient.TryQuickPing())
-            return new DeferredRemoteBackend();
-
-        var pollingService = CreatePollingService(settingsStore);
-        foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
-            pollingService.Log(message);
-
-        pollingService.StartTimer();
-        pollingService.Log("DocToPDF — modo local (serviço não detectado).");
-
-        return new LocalDocToPDFBackend(pollingService);
     }
 
     private static void RunAsWindowsService()

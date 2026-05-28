@@ -34,7 +34,13 @@ powershell -ExecutionPolicy Bypass -File C:\DocToPDF\repo\DocToPDF\install-tray-
 
 3. Reiniciar o serviço após publicar atualizações (`update-and-restart.ps1`).
 
-**Versão atual:** v0.3.1
+**Versão atual:** v0.3.2
+
+### Serviço + bandeja
+
+- A bandeja aberta pelo serviço usa `--attach-service` (só IPC, sem polling local).
+- Ao **parar o serviço Windows**, a bandeja **fecha sozinha** em ~6 s (não fica processando órfão).
+- Para **modo local** contínuo: pare o serviço e execute `DocToPDF.exe` (sem serviço ativo).
 
 ## Repositório (branch `main`)
 

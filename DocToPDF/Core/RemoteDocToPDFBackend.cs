@@ -46,7 +46,9 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
 
     public void RefreshStatus()
     {
-        _isRunning = _client.GetIsRunning();
+        var response = _client.GetStatusResponse();
+        _isRunning = response.StartsWith("OK", StringComparison.Ordinal)
+                     && response.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()
