@@ -13,7 +13,7 @@ git checkout main
 git pull
 ```
 
-**Versão atual no código:** v0.2.10 (bandeja instantânea; IPC com o serviço em segundo plano).
+**Versão atual no código:** v0.2.11 (bandeja instantânea; IPC com o serviço em segundo plano).
 
 ## Estrutura
 
