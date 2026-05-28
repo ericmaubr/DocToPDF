@@ -117,6 +117,12 @@ partial class MainForm
         rtbLog.ScrollBars = RichTextBoxScrollBars.Vertical;
         rtbLog.WordWrap = false;
 
+        // Version / run mode
+        lblVersion.AutoSize = true;
+        lblVersion.Location = new Point(12, 376);
+        lblVersion.ForeColor = Color.Gray;
+        lblVersion.Font = new Font("Segoe UI", 8F);
+
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
         ClientSize = new Size(600, 400);
@@ -129,6 +135,7 @@ partial class MainForm
         Controls.Add(lblLog);
         Controls.Add(btnClearLog);
         Controls.Add(rtbLog);
+        Controls.Add(lblVersion);
         Name = "MainForm";
         StartPosition = FormStartPosition.CenterScreen;
         Text = "DocToPDF";

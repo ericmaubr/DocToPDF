@@ -48,8 +48,8 @@ public sealed class UiInstanceHost : IDisposable
                 PipeOptions.None);
 
             pipe.Connect(800);
-            using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
-            using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+            using var writer = new StreamWriter(pipe, Ipc.DocToPDFIpcServer.Protocol, leaveOpen: true) { AutoFlush = true };
+            using var reader = new StreamReader(pipe, Ipc.DocToPDFIpcServer.Protocol, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
 
             writer.WriteLine("ACTIVATE");
             return reader.ReadLine() == "OK";
@@ -105,8 +105,8 @@ public sealed class UiInstanceHost : IDisposable
         try
         {
             using (server)
-            using (var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true))
-            using (var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true })
+            using (var reader = new StreamReader(server, Ipc.DocToPDFIpcServer.Protocol, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
+            using (var writer = new StreamWriter(server, Ipc.DocToPDFIpcServer.Protocol, leaveOpen: true) { AutoFlush = true })
             {
                 var command = reader.ReadLine();
                 if (command == "ACTIVATE")

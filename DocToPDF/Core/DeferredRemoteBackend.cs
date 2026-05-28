@@ -7,7 +7,6 @@ namespace DocToPDF.Core;
 /// </summary>
 public sealed class DeferredRemoteBackend : IDocToPDFBackend
 {
-    private readonly DocToPDFIpcClient _client = new();
     private readonly object _sync = new();
     private RemoteDocToPDFBackend? _connected;
     private bool _connecting = true;
@@ -65,41 +64,53 @@ public sealed class DeferredRemoteBackend : IDocToPDFBackend
                 _connected.Dispose();
                 _connected = null;
             }
-            else
-                _client.Dispose();
         }
     }
 
     private async Task ConnectLoopAsync()
     {
         const int maxAttempts = 25;
+        string? lastError = null;
+
+        DocToPDFIpcClient.Diag($"ConnectLoop: iniciando, maxAttempts={maxAttempts}");
 
         for (var i = 0; i < maxAttempts; i++)
         {
-            if (_client.TryConnect(TimeSpan.FromMilliseconds(400)))
+            var client = new DocToPDFIpcClient();
+            if (client.TryConnect(TimeSpan.FromMilliseconds(400)))
             {
-                AttachConnectedBackend();
+                DocToPDFIpcClient.Diag($"ConnectLoop: conectado na tentativa {i + 1}.");
+                AttachConnectedBackend(client);
                 return;
             }
+            lastError = client.LastError;
+            client.Dispose();
+
+            if (i == 0 && lastError != null)
+                RaiseLog($"Conectando ao serviço… (1ª tentativa: {lastError})");
 
             if (i < maxAttempts - 1)
                 await Task.Delay(200);
         }
 
+        DocToPDFIpcClient.Diag($"ConnectLoop: FALHOU após {maxAttempts} tentativas. lastError={lastError ?? "<null>"}");
         _connecting = false;
         RaiseLog(
             "⚠ Não foi possível conectar ao serviço DocToPDF. " +
+            $"Último erro: {lastError ?? "desconhecido"}. " +
             "Verifique services.msc ou execute DocToPDF.exe sem o serviço (modo local).");
     }
 
-    private void AttachConnectedBackend()
+    private void AttachConnectedBackend(DocToPDFIpcClient client)
     {
         RemoteDocToPDFBackend remote;
         lock (_sync)
         {
-            remote = new RemoteDocToPDFBackend(_client, refreshStatusOnConnect: false);
+            remote = new RemoteDocToPDFBackend(client, refreshStatusOnConnect: false);
             _connected = remote;
             _connected.LogEvent += OnConnectedLog;
+            // Só agora inicia o recebimento: o histórico drenado já encontra o handler conectado.
+            remote.StartReceivingLogs();
         }
 
         _connecting = false;

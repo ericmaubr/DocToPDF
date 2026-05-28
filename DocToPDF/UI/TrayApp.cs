@@ -13,7 +13,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
     private readonly ToolStripMenuItem _toggleServiceItem;
     private readonly ToolStripMenuItem _processNowItem;
     private readonly System.Windows.Forms.Timer _statusTimer;
-    private int _missedServicePings;
+    private volatile int _missedServicePings;
 
     public TrayApp(InteractiveSession session, IDocToPDFBackend backend, MainForm mainForm)
     {
@@ -22,7 +22,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _mainForm = mainForm;
 
         _modeMenuItem = new ToolStripMenuItem { Enabled = false };
-        _toggleServiceItem = new ToolStripMenuItem("Iniciar Serviço", null, OnToggleService);
+        _toggleServiceItem = new ToolStripMenuItem("Iniciar processamento", null, OnToggleService);
         _processNowItem = new ToolStripMenuItem("Processa Agora", null, OnProcessNow);
 
         var menu = new ContextMenuStrip();
@@ -32,8 +32,14 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_toggleServiceItem);
         menu.Items.Add(_processNowItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Sair", null, OnExit);
+
+        // "Sair" só faz sentido no modo standalone: nele, fechar encerra o processamento.
+        // Anexado ao serviço, o processamento continua no serviço Windows — fechar só esconde a bandeja.
+        if (!_session.UsesServiceBackend)
+        {
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Sair", null, OnExit);
+        }
 
         _notifyIcon = new NotifyIcon
         {
@@ -47,10 +53,10 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _backend.LogEvent += OnBackendLog;
 
         _statusTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-        _statusTimer.Tick += (_, _) => UpdateTrayState();
+        _statusTimer.Tick += (_, _) => Task.Run(OnStatusTickBackground);
         _statusTimer.Start();
 
-        UpdateTrayState();
+        ApplyTrayState();
         ShowStartupNotification();
     }
 
@@ -69,7 +75,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
             var mode = AppRunMode.Describe(_backend);
             _notifyIcon.BalloonTipTitle = $"DocToPDF — {mode}";
             _notifyIcon.BalloonTipText =
-                $"{AppVersion.Display}. Verde = serviço; azul = local; amarelo = conectando. (^ na bandeja se oculto).";
+                $"{AppVersion.Display}. Verde = serviço; azul = local; cinza = conectando/sem conexão. (^ na bandeja se oculto).";
             _notifyIcon.ShowBalloonTip(4000);
         }
         catch
@@ -88,12 +94,16 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     private void OnToggleService(object? sender, EventArgs e)
     {
-        if (_backend.IsRunning)
-            _backend.StopTimer();
-        else
-            _backend.StartTimer();
+        Task.Run(() =>
+        {
+            if (_backend.IsRunning)
+                _backend.StopTimer();
+            else
+                _backend.StartTimer();
 
-        UpdateTrayState();
+            if (_mainForm.IsHandleCreated)
+                _mainForm.BeginInvoke(ApplyTrayState);
+        });
     }
 
     private void OnProcessNow(object? sender, EventArgs e) =>
@@ -112,42 +122,37 @@ public sealed class TrayApp : ApplicationContext, IDisposable
     private void OnBackendLog(object? sender, string message)
     {
         if (_mainForm.IsHandleCreated)
-            _mainForm.BeginInvoke(UpdateTrayState);
-        else
-            UpdateTrayState();
+            _mainForm.BeginInvoke(ApplyTrayState);
     }
 
-    private void UpdateTrayState()
+    private void OnStatusTickBackground()
     {
-        if (_session.UsesServiceBackend && CheckServiceStopped())
-            return;
+        if (_session.UsesServiceBackend)
+        {
+            if (!DocToPDFIpcClient.TryQuickPing())
+                _missedServicePings++;
+            else
+                _missedServicePings = 0;
+
+            if (_missedServicePings >= 2)
+            {
+                if (_mainForm.IsHandleCreated)
+                    _mainForm.BeginInvoke(HandleServiceStopped);
+                return;
+            }
+        }
 
         if (_backend is DeferredRemoteBackend deferred)
             deferred.RefreshStatus();
         else if (_backend is RemoteDocToPDFBackend remote)
             remote.RefreshStatus();
 
-        var isRunning = _backend.IsRunning;
-        var modeLabel = AppRunMode.Describe(_backend);
-
-        _modeMenuItem.Text = $"Modo: {modeLabel}";
-        _mainForm.UpdateRunModeDisplay();
-
-        _notifyIcon.Icon = TrayIconFactory.Create(AppRunMode.TrayIndicatorColor(_backend, isRunning));
-        _notifyIcon.Text = $"DocToPDF {AppVersion.Display} — {AppRunMode.TrayStatusSuffix(_backend, isRunning)}";
-        _toggleServiceItem.Text = isRunning ? "Parar Serviço" : "Iniciar Serviço";
+        if (_mainForm.IsHandleCreated)
+            _mainForm.BeginInvoke(ApplyTrayState);
     }
 
-    private bool CheckServiceStopped()
+    private void HandleServiceStopped()
     {
-        if (!DocToPDFIpcClient.TryQuickPing())
-            _missedServicePings++;
-        else
-            _missedServicePings = 0;
-
-        if (_missedServicePings < 2)
-            return false;
-
         _session.StopLocalProcessing();
         _backend.StopTimer();
 
@@ -165,7 +170,19 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         }
 
         Application.Exit();
-        return true;
+    }
+
+    private void ApplyTrayState()
+    {
+        var isRunning = _backend.IsRunning;
+        var modeLabel = AppRunMode.Describe(_backend);
+
+        _modeMenuItem.Text = $"Modo: {modeLabel}";
+        _mainForm.UpdateRunModeDisplay();
+
+        _notifyIcon.Icon = TrayIconFactory.Create(AppRunMode.TrayIndicatorColor(_backend, isRunning));
+        _notifyIcon.Text = $"DocToPDF {AppVersion.Display} — {AppRunMode.TrayStatusSuffix(_backend, isRunning)}";
+        _toggleServiceItem.Text = isRunning ? "Parar processamento" : "Iniciar processamento";
     }
 
     public new void Dispose()

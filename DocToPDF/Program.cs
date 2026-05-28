@@ -11,6 +11,16 @@ internal static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        if (args.Any(a =>
+                a.Equals("--help", StringComparison.OrdinalIgnoreCase) ||
+                a.Equals("-h", StringComparison.OrdinalIgnoreCase) ||
+                a == "/?" ||
+                a.Equals("/help", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShowUsage();
+            return;
+        }
+
         if (args.Contains("--verify", StringComparer.OrdinalIgnoreCase))
         {
             var samplesRoot = args.Length > 1
@@ -34,13 +44,31 @@ internal static class Program
 
     private static void RunInteractiveTray(bool attachToService)
     {
+        DocToPDFIpcClient.Diag(
+            $"RunInteractiveTray: attach={attachToService} UserInteractive={Environment.UserInteractive} " +
+            $"session={Environment.GetEnvironmentVariable("SESSIONNAME") ?? "?"} exe={Environment.ProcessPath}");
+
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
         if (!SingleInstanceMutex.TryAcquire(out var instanceMutex))
         {
-            UiInstanceHost.TryActivateExisting();
+            DocToPDFIpcClient.Diag("RunInteractiveTray: mutex já em uso → ativando instância existente e saindo (nenhum backend criado).");
+            var activated = UiInstanceHost.TryActivateExisting();
+
+            // Lançamento automático pelo serviço (--attach-service) não deve exibir popup.
+            if (!attachToService)
+            {
+                MessageBox.Show(
+                    activated
+                        ? "O DocToPDF já está em execução. A janela existente foi trazida para a frente."
+                        : "O DocToPDF já está em execução nesta sessão.",
+                    "DocToPDF",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
             return;
         }
 
@@ -48,6 +76,8 @@ internal static class Program
         {
             using var session = new InteractiveSession(new SettingsStore(), attachToService);
             var backend = session.CreateBackend();
+            DocToPDFIpcClient.Diag(
+                $"RunInteractiveTray: backend={backend.GetType().Name} UsesServiceBackend={session.UsesServiceBackend}");
             var mainForm = new MainForm(session.SettingsStore, backend);
             var trayApp = new TrayApp(session, backend, mainForm);
 
@@ -59,6 +89,15 @@ internal static class Program
     private static void RunAsWindowsService()
     {
         ServiceLog.Initialize();
+
+        if (LocalModeLock.IsHeld())
+        {
+            ServiceLog.Error(
+                "Serviço não iniciado: há uma instância standalone (modo local) do DocToPDF em execução. " +
+                "Feche-a antes de iniciar o serviço para evitar processamento duplicado da mesma pasta.");
+            Environment.Exit(1);
+        }
+
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             if (e.ExceptionObject is Exception ex)
@@ -85,6 +124,21 @@ internal static class Program
             })
             .Build()
             .Run();
+    }
+
+    private static void ShowUsage()
+    {
+        MessageBox.Show(
+            $"DocToPDF {AppVersion.Display}\n\n" +
+            "Uso:\n" +
+            "  DocToPDF.exe                  Abre a bandeja (conecta ao serviço se houver).\n" +
+            "  DocToPDF.exe --attach-service Abre a bandeja anexada ao serviço Windows.\n" +
+            "  DocToPDF.exe --service        Executa como serviço Windows.\n" +
+            "  DocToPDF.exe --verify [pasta] Valida o processamento e encerra.\n" +
+            "  DocToPDF.exe --help           Mostra esta ajuda.",
+            "DocToPDF — Ajuda",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     private static PollingService CreatePollingService(SettingsStore settingsStore)

@@ -15,7 +15,74 @@ public sealed class DocToPDFIpcClient : IDisposable
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
 
-    public event EventHandler<string>? LogReceived;
+    private readonly object _logGate = new();
+    private readonly Queue<string> _earlyLogs = new();
+    private EventHandler<string>? _logReceived;
+
+    /// <summary>
+    /// Linhas de LOG que chegam antes de haver assinante (ex.: o histórico enviado pelo
+    /// servidor no SUBSCRIBE_LOGS) ficam em fila e são entregues ao primeiro assinante.
+    /// </summary>
+    public event EventHandler<string> LogReceived
+    {
+        add
+        {
+            lock (_logGate)
+            {
+                _logReceived += value;
+                while (_earlyLogs.Count > 0)
+                    value(this, _earlyLogs.Dequeue());
+            }
+        }
+        remove
+        {
+            lock (_logGate)
+                _logReceived -= value;
+        }
+    }
+
+    public string? LastError { get; private set; }
+
+    private static readonly object DiagGate = new();
+    private static bool _diagHeaderWritten;
+
+    internal static void Diag(string message)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (string.IsNullOrEmpty(dir))
+                dir = AppContext.BaseDirectory;
+
+            var path = Path.Combine(dir, "DocToPDF-ipc.log");
+            lock (DiagGate)
+            {
+                if (!_diagHeaderWritten)
+                {
+                    _diagHeaderWritten = true;
+                    File.AppendAllText(path,
+                        $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} === UI iniciada | versão={DocToPDF.Core.AppVersion.Display} | exe={Environment.ProcessPath} | user={Environment.UserName}{Environment.NewLine}");
+                }
+
+                File.AppendAllText(path,
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+            // Fallback para TEMP se o diretório do exe não for gravável.
+            try
+            {
+                var fallback = Path.Combine(Path.GetTempPath(), "DocToPDF-ipc.log");
+                File.AppendAllText(fallback,
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Ignore.
+            }
+        }
+    }
 
     /// <summary>
     /// Uma tentativa rápida para saber se o pipe do serviço está ativo (não bloqueia a UI).
@@ -31,15 +98,19 @@ public sealed class DocToPDFIpcClient : IDisposable
                 PipeOptions.Asynchronous);
 
             pipe.Connect(connectMs);
-            using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
-            using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+            using var writer = new StreamWriter(pipe, DocToPDFIpcServer.Protocol, leaveOpen: true) { AutoFlush = true };
+            using var reader = new StreamReader(pipe, DocToPDFIpcServer.Protocol, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
 
             writer.WriteLine("PING");
             var response = reader.ReadLine();
-            return response != null && response.StartsWith("OK", StringComparison.Ordinal);
+            var ok = response != null && response.StartsWith("OK", StringComparison.Ordinal);
+            if (!ok)
+                Diag($"QuickPing falhou: resposta='{response ?? "<null>"}'");
+            return ok;
         }
-        catch
+        catch (Exception ex)
         {
+            Diag($"QuickPing exceção: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -54,17 +125,32 @@ public sealed class DocToPDFIpcClient : IDisposable
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous);
 
+            Diag($"TryConnect: Connect({(int)timeout.TotalMilliseconds}ms)…");
             _pipe.Connect((int)timeout.TotalMilliseconds);
-            _reader = new StreamReader(_pipe, Encoding.UTF8, leaveOpen: true);
-            _writer = new StreamWriter(_pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+            Diag("TryConnect: pipe conectado; criando reader/writer.");
+            _reader = new StreamReader(_pipe, DocToPDFIpcServer.Protocol, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            _writer = new StreamWriter(_pipe, DocToPDFIpcServer.Protocol, leaveOpen: true) { AutoFlush = true };
 
             StartReader();
 
+            Diag("TryConnect: enviando SUBSCRIBE_LOGS.");
             var subscribe = SendCommand("SUBSCRIBE_LOGS", timeout);
-            return subscribe.StartsWith("OK", StringComparison.Ordinal);
+            Diag($"TryConnect: SUBSCRIBE_LOGS retornou '{subscribe}'.");
+            if (subscribe.StartsWith("OK", StringComparison.Ordinal))
+            {
+                LastError = null;
+                return true;
+            }
+
+            LastError = $"SUBSCRIBE_LOGS → {subscribe}";
+            Diag($"TryConnect: {LastError}");
+            Dispose();
+            return false;
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = $"{ex.GetType().Name}: {ex.Message}";
+            Diag($"TryConnect exceção: {LastError}");
             Dispose();
             return false;
         }
@@ -100,13 +186,23 @@ public sealed class DocToPDFIpcClient : IDisposable
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingResponses.Enqueue(tcs);
 
-        lock (_writeLock)
+        try
         {
-            _writer.WriteLine(command);
+            lock (_writeLock)
+            {
+                _writer.WriteLine(command);
+            }
+        }
+        catch (Exception ex)
+        {
+            Diag($"SendCommand('{command}'): falha ao escrever ({ex.GetType().Name}: {ex.Message}).");
+            DrainPending(tcs);
+            return "ERR Conexão perdida.";
         }
 
         if (!tcs.Task.Wait(timeout))
         {
+            Diag($"SendCommand('{command}'): TIMEOUT após {timeout.TotalMilliseconds}ms.");
             DrainPending(tcs);
             return "ERR Timeout.";
         }
@@ -138,7 +234,14 @@ public sealed class DocToPDFIpcClient : IDisposable
 
                 if (line.StartsWith("LOG ", StringComparison.Ordinal))
                 {
-                    LogReceived?.Invoke(this, line[4..]);
+                    var payload = line[4..];
+                    lock (_logGate)
+                    {
+                        if (_logReceived != null)
+                            _logReceived.Invoke(this, payload);
+                        else
+                            _earlyLogs.Enqueue(payload);
+                    }
                     continue;
                 }
 

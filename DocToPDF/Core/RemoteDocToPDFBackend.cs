@@ -10,10 +10,16 @@ public sealed class RemoteDocToPDFBackend : IDocToPDFBackend
     public RemoteDocToPDFBackend(DocToPDFIpcClient client, bool refreshStatusOnConnect = true)
     {
         _client = client;
-        _client.LogReceived += OnLogReceived;
         if (refreshStatusOnConnect)
             RefreshStatus();
     }
+
+    /// <summary>
+    /// Assina o stream de logs do cliente, drenando o histórico já recebido no SUBSCRIBE_LOGS.
+    /// Chame depois de conectar os handlers de <see cref="LogEvent"/> deste backend, para que
+    /// o histórico flua até a UI em vez de se perder.
+    /// </summary>
+    public void StartReceivingLogs() => _client.LogReceived += OnLogReceived;
 
     public bool IsRemote => true;
 

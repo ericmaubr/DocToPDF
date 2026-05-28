@@ -8,11 +8,21 @@ public sealed class DocToPDFIpcServer : IDisposable
 {
     public const string PipeName = "DocToPDF.IPC.v1";
 
+    /// <summary>
+    /// UTF-8 SEM BOM. Protocolo de linha: o BOM de <see cref="Encoding.UTF8"/> seria escrito
+    /// no flush inicial (AutoFlush), travando em pipe com buffer 0 antes de qualquer leitura.
+    /// </summary>
+    public static readonly Encoding Protocol = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    private const int LogHistoryMax = 500;
+
     private readonly ConcurrentDictionary<Guid, StreamWriter> _logSubscribers = new();
     private readonly object _broadcastLock = new();
+    private readonly LinkedList<string> _logHistory = new();
     private CancellationTokenSource? _cts;
     private Task? _listenerTask;
     private PollingService? _polling;
+    private int _disposed;
 
     public void Start(PollingService polling)
     {
@@ -64,8 +74,8 @@ public sealed class DocToPDFIpcServer : IDisposable
         {
             using (server)
             {
-                using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
-                using var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+                using var reader = new StreamReader(server, Protocol, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+                using var writer = new StreamWriter(server, Protocol, leaveOpen: true) { AutoFlush = true };
 
                 string? line;
                 while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
@@ -122,7 +132,25 @@ public sealed class DocToPDFIpcServer : IDisposable
 
     private string SubscribeLogs(Guid clientId, StreamWriter writer)
     {
-        _logSubscribers[clientId] = writer;
+        // Sob o mesmo lock do broadcast: reproduz o histórico e registra o assinante
+        // atomicamente, sem perder nem duplicar linhas que cheguem nesse intervalo.
+        lock (_broadcastLock)
+        {
+            foreach (var line in _logHistory)
+            {
+                try
+                {
+                    writer.WriteLine(line);
+                }
+                catch
+                {
+                    return "ERR Falha ao enviar histórico.";
+                }
+            }
+
+            _logSubscribers[clientId] = writer;
+        }
+
         return "OK";
     }
 
@@ -131,6 +159,10 @@ public sealed class DocToPDFIpcServer : IDisposable
         var line = $"LOG {message}";
         lock (_broadcastLock)
         {
+            _logHistory.AddLast(line);
+            while (_logHistory.Count > LogHistoryMax)
+                _logHistory.RemoveFirst();
+
             foreach (var (id, writer) in _logSubscribers)
             {
                 try
@@ -147,6 +179,9 @@ public sealed class DocToPDFIpcServer : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         _cts?.Cancel();
         try
         {

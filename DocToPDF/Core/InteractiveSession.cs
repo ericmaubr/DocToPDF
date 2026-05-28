@@ -10,6 +10,7 @@ public sealed class InteractiveSession : IDisposable
     private readonly SettingsStore _settingsStore;
     private readonly bool _attachToService;
     private PollingService? _localPolling;
+    private LocalModeLock? _localLock;
 
     public InteractiveSession(SettingsStore settingsStore, bool attachToService)
     {
@@ -37,12 +38,13 @@ public sealed class InteractiveSession : IDisposable
 
     private static bool TryDetectService()
     {
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < 2; i++)
         {
-            if (DocToPDFIpcClient.TryQuickPing(400))
+            if (DocToPDFIpcClient.TryQuickPing(200))
                 return true;
 
-            Thread.Sleep(300);
+            if (i < 1)
+                Thread.Sleep(100);
         }
 
         return false;
@@ -50,6 +52,9 @@ public sealed class InteractiveSession : IDisposable
 
     private LocalDocToPDFBackend CreateLocalBackend()
     {
+        // Sinaliza ao serviço Windows que há processamento local ativo (ele recusa iniciar se vir esta trava).
+        LocalModeLock.TryAcquire(out _localLock);
+
         PollingService? polling = null;
         var fileProcessor = new FileProcessor(_settingsStore.Settings, message => polling!.Log(message));
         polling = new PollingService(_settingsStore, fileProcessor);
@@ -66,5 +71,9 @@ public sealed class InteractiveSession : IDisposable
 
     public void StopLocalProcessing() => _localPolling?.StopTimer();
 
-    public void Dispose() => _localPolling?.Dispose();
+    public void Dispose()
+    {
+        _localPolling?.Dispose();
+        _localLock?.Dispose();
+    }
 }

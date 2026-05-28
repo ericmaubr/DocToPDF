@@ -16,6 +16,7 @@ public partial class MainForm : Form
         _settingsStore = settingsStore;
         _backend = backend;
         InitializeComponent();
+        Icon = AppIconFactory.Create();
         UpdateRunModeDisplay();
 
         var toolTip = new ToolTip();
@@ -37,7 +38,7 @@ public partial class MainForm : Form
     {
         var mode = AppRunMode.Describe(_backend);
         lblVersion.Text = $"{AppVersion.Display} — {mode}";
-        Text = $"DocToPDF — Configuração — {mode}";
+        Text = $"DocToPDF {AppVersion.Display} — Configuração — {mode}";
     }
 
     private void LoadSettingsToUi()
