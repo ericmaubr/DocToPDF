@@ -24,6 +24,30 @@ DocToPDF/
 dotnet build DocToPDF/DocToPDF.csproj
 ```
 
+## Atualização rápida no Windows (script)
+
+Arquivo: `DocToPDF/update-and-restart.ps1`
+
+Executar no **PowerShell como Administrador**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\DocToPDF\repo\DocToPDF\update-and-restart.ps1 `
+  -RepoRoot C:\DocToPDF\repo `
+  -InstallDir C:\DocToPDF `
+  -Variant compressed `
+  -StartTrayUi
+```
+
+O script:
+
+1. para o serviço `DocToPDF`
+2. encerra processos `DocToPDF.exe` antigos
+3. faz `git pull` no repositório
+4. executa `dotnet publish` (comprimido ou full)
+5. copia `DocToPDF.exe` e `DocToPDF.conf` para `C:\DocToPDF`
+6. inicia o serviço novamente
+7. opcionalmente abre a UI com `--ui`
+
 ## Publicação
 
 O executável parece “grande” porque o modo **self-contained** embute o runtime .NET 8 + WinForms + bibliotecas nativas do QuestPDF (Skia). O código do app em si é pequeno.
