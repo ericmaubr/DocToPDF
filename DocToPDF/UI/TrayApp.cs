@@ -14,12 +14,16 @@ public sealed class TrayApp : ApplicationContext, IDisposable
     private readonly ToolStripMenuItem _processNowItem;
     private readonly System.Windows.Forms.Timer _statusTimer;
     private int _missedServicePings;
+    private int _statusRefreshInFlight;
 
     public TrayApp(InteractiveSession session, IDocToPDFBackend backend, MainForm mainForm)
     {
         _session = session;
         _backend = backend;
         _mainForm = mainForm;
+
+        if (_backend is DeferredRemoteBackend deferred)
+            deferred.ConnectionStateChanged += OnConnectionStateChanged;
 
         _modeMenuItem = new ToolStripMenuItem { Enabled = false };
         _toggleServiceItem = new ToolStripMenuItem("Iniciar Serviço", null, OnToggleService);
@@ -47,10 +51,10 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _backend.LogEvent += OnBackendLog;
 
         _statusTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-        _statusTimer.Tick += (_, _) => UpdateTrayState();
+        _statusTimer.Tick += (_, _) => BeginRefreshTrayState();
         _statusTimer.Start();
 
-        UpdateTrayState();
+        ApplyTrayVisuals();
         ShowStartupNotification();
     }
 
@@ -69,12 +73,12 @@ public sealed class TrayApp : ApplicationContext, IDisposable
             var mode = AppRunMode.Describe(_backend);
             _notifyIcon.BalloonTipTitle = $"DocToPDF — {mode}";
             _notifyIcon.BalloonTipText =
-                $"{AppVersion.Display}. Verde = serviço; azul = local; amarelo = conectando. (^ na bandeja se oculto).";
+                $"{AppVersion.Display}. Verde = serviço; azul = local; amarelo = conectando.";
             _notifyIcon.ShowBalloonTip(4000);
         }
         catch
         {
-            // Balloon tips may be disabled by policy.
+            // Ignore.
         }
     }
 
@@ -84,6 +88,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         _mainForm.WindowState = FormWindowState.Normal;
         _mainForm.BringToFront();
         _mainForm.Activate();
+        BeginRefreshTrayState();
     }
 
     private void OnToggleService(object? sender, EventArgs e)
@@ -93,7 +98,7 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         else
             _backend.StartTimer();
 
-        UpdateTrayState();
+        BeginRefreshTrayState();
     }
 
     private void OnProcessNow(object? sender, EventArgs e) =>
@@ -109,24 +114,49 @@ public sealed class TrayApp : ApplicationContext, IDisposable
         Application.Exit();
     }
 
-    private void OnBackendLog(object? sender, string message)
-    {
-        if (_mainForm.IsHandleCreated)
-            _mainForm.BeginInvoke(UpdateTrayState);
-        else
-            UpdateTrayState();
-    }
+    private void OnConnectionStateChanged(object? sender, EventArgs e) => BeginRefreshTrayState();
 
-    private void UpdateTrayState()
+    private void OnBackendLog(object? sender, string message) => BeginRefreshTrayState();
+
+    private void BeginRefreshTrayState()
     {
         if (_session.UsesServiceBackend && CheckServiceStopped())
             return;
 
-        if (_backend is DeferredRemoteBackend deferred)
-            deferred.RefreshStatus();
-        else if (_backend is RemoteDocToPDFBackend remote)
-            remote.RefreshStatus();
+        if (_backend is not (DeferredRemoteBackend or RemoteDocToPDFBackend))
+        {
+            if (_mainForm.InvokeRequired)
+                _mainForm.BeginInvoke(ApplyTrayVisuals);
+            else
+                ApplyTrayVisuals();
+            return;
+        }
 
+        if (Interlocked.CompareExchange(ref _statusRefreshInFlight, 1, 0) != 0)
+            return;
+
+        Task.Run(() =>
+        {
+            try
+            {
+                if (_backend is DeferredRemoteBackend deferred)
+                    deferred.RefreshStatus();
+                else if (_backend is RemoteDocToPDFBackend remote)
+                    remote.TryRefreshStatus();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _statusRefreshInFlight, 0);
+                if (_mainForm.IsHandleCreated)
+                    _mainForm.BeginInvoke(ApplyTrayVisuals);
+                else
+                    ApplyTrayVisuals();
+            }
+        });
+    }
+
+    private void ApplyTrayVisuals()
+    {
         var isRunning = _backend.IsRunning;
         var modeLabel = AppRunMode.Describe(_backend);
 
@@ -149,14 +179,20 @@ public sealed class TrayApp : ApplicationContext, IDisposable
             return false;
 
         _session.StopLocalProcessing();
-        _backend.StopTimer();
+        try
+        {
+            _backend.StopTimer();
+        }
+        catch
+        {
+            // Ignore.
+        }
 
         try
         {
             _notifyIcon.BalloonTipTitle = "DocToPDF";
             _notifyIcon.BalloonTipText =
-                "Serviço Windows parado. A bandeja será fechada. " +
-                "Para modo local, execute DocToPDF.exe com o serviço desligado.";
+                "Serviço Windows parado. A bandeja será fechada.";
             _notifyIcon.ShowBalloonTip(4000);
         }
         catch
@@ -170,6 +206,9 @@ public sealed class TrayApp : ApplicationContext, IDisposable
 
     public new void Dispose()
     {
+        if (_backend is DeferredRemoteBackend deferred)
+            deferred.ConnectionStateChanged -= OnConnectionStateChanged;
+
         _statusTimer.Stop();
         _statusTimer.Dispose();
         _backend.LogEvent -= OnBackendLog;

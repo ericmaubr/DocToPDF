@@ -1,14 +1,20 @@
 namespace DocToPDF.Core;
 
-/// <summary>
-/// Textos e cores para indicar modo local vs serviço Windows.
-/// </summary>
 public static class AppRunMode
 {
     public static string Describe(IDocToPDFBackend backend)
     {
         if (backend is DeferredRemoteBackend deferred)
-            return deferred.IsConnected ? "Serviço Windows" : "Conectando ao serviço…";
+        {
+            if (deferred.IsConnected)
+                return "Serviço Windows";
+
+            if (deferred.IsConnecting)
+                return "Conectando ao serviço…";
+
+            if (deferred.ConnectFailed)
+                return "Serviço indisponível";
+        }
 
         return backend.IsRemote ? "Serviço Windows" : "Local";
     }
@@ -22,11 +28,20 @@ public static class AppRunMode
 
     public static Color TrayIndicatorColor(IDocToPDFBackend backend, bool isRunning)
     {
+        if (backend is DeferredRemoteBackend deferred)
+        {
+            if (deferred.IsConnecting)
+                return Color.Goldenrod;
+
+            if (deferred.ConnectFailed)
+                return Color.OrangeRed;
+
+            if (!deferred.IsConnected)
+                return Color.Gray;
+        }
+
         if (!isRunning)
             return Color.Gray;
-
-        if (backend is DeferredRemoteBackend { IsConnected: false })
-            return Color.Goldenrod;
 
         if (backend.IsRemote)
             return Color.LimeGreen;

@@ -3,10 +3,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace DocToPDF.Core;
 
-/// <summary>
-/// Worker do serviço Windows: apenas polling + IPC. Sem UI (Session 0).
-/// A bandeja roda em processo separado na sessão do usuário (ver README).
-/// </summary>
 public sealed class DocToPDFBackgroundService : BackgroundService
 {
     private readonly PollingService _polling;
@@ -54,8 +50,8 @@ public sealed class DocToPDFBackgroundService : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        _ipcServer.StopListening();
         await _polling.StopAsync(cancellationToken);
-        _ipcServer.Dispose();
         ServiceLog.Info("Serviço parado.");
         await base.StopAsync(cancellationToken);
     }

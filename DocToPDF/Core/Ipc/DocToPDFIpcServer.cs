@@ -10,12 +10,16 @@ public sealed class DocToPDFIpcServer : IDisposable
 
     private readonly ConcurrentDictionary<Guid, StreamWriter> _logSubscribers = new();
     private readonly object _broadcastLock = new();
+    private readonly object _lifecycleLock = new();
     private CancellationTokenSource? _cts;
     private Task? _listenerTask;
     private PollingService? _polling;
+    private int _disposed;
 
     public void Start(PollingService polling)
     {
+        ObjectDisposedException.ThrowIf(_disposed != 0, this);
+
         _polling = polling;
         _polling.LogEvent += OnPollingLog;
 
@@ -39,16 +43,30 @@ public sealed class DocToPDFIpcServer : IDisposable
 
                 var connectedServer = server;
                 server = null;
-                _ = Task.Run(() => HandleClientAsync(connectedServer, cancellationToken), cancellationToken);
+                _ = Task.Run(() => HandleClientAsync(connectedServer), CancellationToken.None);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
                 ServiceLog.Error($"IPC listen: {ex.Message}");
-                await Task.Delay(500, cancellationToken);
+                try
+                {
+                    await Task.Delay(500, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
             finally
             {
@@ -57,7 +75,7 @@ public sealed class DocToPDFIpcServer : IDisposable
         }
     }
 
-    private async Task HandleClientAsync(NamedPipeServerStream server, CancellationToken cancellationToken)
+    private async Task HandleClientAsync(NamedPipeServerStream server)
     {
         var clientId = Guid.NewGuid();
         try
@@ -68,7 +86,7 @@ public sealed class DocToPDFIpcServer : IDisposable
                 using var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
 
                 string? line;
-                while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+                while ((line = await reader.ReadLineAsync()) != null)
                 {
                     var response = ExecuteCommand(line.Trim(), clientId, writer);
                     await writer.WriteLineAsync(response);
@@ -145,21 +163,54 @@ public sealed class DocToPDFIpcServer : IDisposable
         }
     }
 
+    public void StopListening()
+    {
+        lock (_lifecycleLock)
+        {
+            if (_disposed != 0)
+                return;
+
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Já cancelado.
+            }
+        }
+    }
+
     public void Dispose()
     {
-        _cts?.Cancel();
-        try
+        lock (_lifecycleLock)
         {
-            _listenerTask?.Wait(TimeSpan.FromSeconds(2));
-        }
-        catch
-        {
-            // Ignore shutdown timeout.
-        }
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+                return;
 
-        if (_polling != null)
-            _polling.LogEvent -= OnPollingLog;
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore.
+            }
 
-        _cts?.Dispose();
+            try
+            {
+                _listenerTask?.Wait(TimeSpan.FromSeconds(3));
+            }
+            catch
+            {
+                // Ignore shutdown timeout.
+            }
+
+            if (_polling != null)
+                _polling.LogEvent -= OnPollingLog;
+
+            _cts?.Dispose();
+            _cts = null;
+        }
     }
 }
