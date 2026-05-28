@@ -89,7 +89,7 @@ public sealed class DeferredRemoteBackend : IDocToPDFBackend
         _connecting = false;
         RaiseLog(
             "⚠ Não foi possível conectar ao serviço DocToPDF. " +
-            "Verifique em services.msc se o serviço está em execução.");
+            "Verifique services.msc ou execute DocToPDF.exe sem o serviço (modo local).");
     }
 
     private void AttachConnectedBackend()

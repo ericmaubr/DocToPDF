@@ -10,8 +10,8 @@
     <ApplicationIcon />
     <RootNamespace>DocToPDF</RootNamespace>
     <AssemblyName>DocToPDF</AssemblyName>
-    <Version>0.2.12</Version>
-    <AssemblyInformationalVersion>0.2.12</AssemblyInformationalVersion>
+    <Version>0.3.0</Version>
+    <AssemblyInformationalVersion>0.3.0</AssemblyInformationalVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>

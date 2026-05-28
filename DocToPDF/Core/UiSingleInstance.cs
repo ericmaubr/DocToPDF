@@ -1,6 +1,4 @@
 using System.IO.Pipes;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text;
 
 namespace DocToPDF.Core;
@@ -49,7 +47,7 @@ public sealed class UiInstanceHost : IDisposable
     public void SetActivateHandler(Action onActivate) => _onActivate = onActivate;
 
     private static NamedPipeServerStream CreateServer() =>
-        NamedPipeSecurityFactory.CreateServer(PipeName, PipeOptions.Asynchronous);
+        Ipc.NamedPipeHost.CreateServer(PipeName, PipeOptions.Asynchronous);
 
     private async Task ListenAsync(CancellationToken cancellationToken)
     {

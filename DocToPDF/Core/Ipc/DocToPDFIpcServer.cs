@@ -34,7 +34,7 @@ public sealed class DocToPDFIpcServer : IDisposable
             NamedPipeServerStream? server = null;
             try
             {
-                server = NamedPipeSecurityFactory.CreateServer(PipeName);
+                server = NamedPipeHost.CreateServer(PipeName);
                 await server.WaitForConnectionAsync(cancellationToken);
 
                 var connectedServer = server;

@@ -1,12 +1,20 @@
 using DocToPDF.Core;
 using DocToPDF.Core.Ipc;
-using DocToPDF.Models;
 using DocToPDF.UI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace DocToPDF;
 
+/// <summary>
+/// Um executável, três modos (recomendação Microsoft / Stephen Cleary):
+/// <list type="bullet">
+/// <item><b>Serviço</b> — worker headless na Session 0; expõe IPC.</item>
+/// <item><b>Bandeja + serviço</b> — usuário executa na sessão interativa; conecta ao pipe se o serviço estiver ativo.</item>
+/// <item><b>Standalone</b> — mesmo exe sem serviço; polling local na sessão do usuário.</item>
+/// </list>
+/// O serviço nunca exibe UI nem inicia a bandeja (isolamento Session 0).
+/// </summary>
 internal static class Program
 {
     [STAThread]
@@ -20,24 +28,24 @@ internal static class Program
             Environment.Exit(Verify.ProcessingVerifier.Run(samplesRoot));
         }
 
-        var uiOnly = args.Contains("--ui", StringComparer.OrdinalIgnoreCase);
-        if (uiOnly)
-        {
-            RunAsTrayApp(useServiceBackend: true);
-            return;
-        }
-
-        if (!Environment.UserInteractive)
+        if (IsServiceMode(args))
         {
             RunAsWindowsService();
             return;
         }
 
-        var serviceRunning = DocToPDFIpcClient.TryQuickPing();
-        RunAsTrayApp(useServiceBackend: serviceRunning);
+        RunInteractiveTray();
     }
 
-    private static void RunAsTrayApp(bool useServiceBackend)
+    /// <summary>Serviço Windows ou flag explícita --service.</summary>
+    private static bool IsServiceMode(string[] args) =>
+        args.Contains("--service", StringComparer.OrdinalIgnoreCase) || !Environment.UserInteractive;
+
+    /// <summary>
+    /// Processo na sessão do usuário: conecta ao serviço se disponível; senão modo standalone.
+    /// --ui é aceito por compatibilidade (equivale a abrir a bandeja).
+    /// </summary>
+    private static void RunInteractiveTray()
     {
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
@@ -47,22 +55,26 @@ internal static class Program
             return;
 
         using var uiInstance = UiInstanceHost.Start();
-
         var settingsStore = new SettingsStore();
 
-        if (useServiceBackend)
+        if (DocToPDFIpcClient.TryQuickPing())
         {
             var backend = new DeferredRemoteBackend();
             RunTrayLoop(uiInstance, settingsStore, backend);
             return;
         }
 
+        RunStandaloneTray(uiInstance, settingsStore);
+    }
+
+    private static void RunStandaloneTray(UiInstanceHost uiInstance, SettingsStore settingsStore)
+    {
         var pollingService = CreatePollingService(settingsStore);
         foreach (var message in ConfiguredDirectories.EnsureExist(settingsStore.Settings))
             pollingService.Log(message);
 
         pollingService.StartTimer();
-        pollingService.Log("DocToPDF — processamento automático iniciado.");
+        pollingService.Log("DocToPDF — modo local (serviço não detectado).");
 
         var localBackend = new LocalDocToPDFBackend(pollingService);
         RunTrayLoop(uiInstance, settingsStore, localBackend);
@@ -96,12 +108,12 @@ internal static class Program
             {
                 services.Configure<HostOptions>(options =>
                     options.BackgroundServiceExceptionBehavior =
-                        BackgroundServiceExceptionBehavior.Ignore);
+                        BackgroundServiceExceptionBehavior.StopHost);
 
                 services.AddSingleton<SettingsStore>();
                 services.AddSingleton<DocToPDFIpcServer>();
                 services.AddSingleton(CreatePollingService);
-                services.AddHostedService<DocToPDFWorkerHostedService>();
+                services.AddHostedService<DocToPDFBackgroundService>();
             })
             .Build()
             .Run();

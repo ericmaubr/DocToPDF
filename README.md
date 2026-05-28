@@ -2,9 +2,41 @@
 
 Aplicação Windows (.NET 8) que monitora uma pasta de entrada, converte arquivos `.xml` e `.json` em PDFs legíveis para robôs e oferece ícone na bandeja do sistema com painel de configuração.
 
-## Repositório (branch `main`)
+## Arquitetura (recomendação Microsoft)
 
-Todo o desenvolvimento ativo é feito na branch **`main`**. Clone, trabalhe e faça push direto nela — não há fluxo com branches de feature.
+O mesmo `DocToPDF.exe` tem **três modos**, alinhados à [orientação oficial](https://learn.microsoft.com/en-us/windows/win32/services/interactive-services) e à prática consolidada para apps .NET ([Stephen Cleary — Managed Services and UIs](https://blog.stephencleary.com/2011/05/managed-services-and-uis.html)):
+
+| Modo | Quem inicia | O que faz |
+|------|-------------|-----------|
+| **Serviço Windows** | SCM (`services.msc`) | Só processamento + IPC (named pipe). **Sem UI** — Session 0. |
+| **Bandeja + serviço** | Usuário no login (atalho em Inicializar) | Conecta ao pipe; controla o worker remoto. |
+| **Standalone** | Usuário (`DocToPDF.exe` sem serviço) | Polling e bandeja no mesmo processo. |
+
+Regras importantes:
+
+- O **serviço não abre janela nem bandeja** (evita Session 0, `CreateProcessAsUser` frágil e crashes).
+- A **UI sempre roda na sessão do usuário** e fala com o serviço por **named pipe** (IPC local).
+- Se o serviço não estiver ativo, o exe na sessão do usuário entra em **modo local** automaticamente.
+
+```
+  [Serviço DocToPDF]  Session 0          [DocToPDF.exe]  Session do usuário
+   Polling + PDF  ◄──── named pipe ────►  Bandeja + painel
+```
+
+### Instalação típica
+
+1. Instalar o serviço apontando para `C:\DocToPDF\DocToPDF.exe` (o host detecta modo serviço automaticamente).
+2. Registrar a bandeja no logon (uma vez):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\DocToPDF\repo\DocToPDF\install-tray-at-logon.ps1 -ExePath C:\DocToPDF\DocToPDF.exe
+```
+
+3. Reiniciar o serviço após publicar atualizações (`update-and-restart.ps1`).
+
+**Versão atual:** v0.3.0
+
+## Repositório (branch `main`)
 
 ```bash
 git clone https://github.com/ericmaubr/DocToPDF.git
@@ -13,16 +45,14 @@ git checkout main
 git pull
 ```
 
-**Versão atual no código:** v0.2.12 (bandeja instantânea; IPC com o serviço em segundo plano).
-
 ## Estrutura
 
 ```
 DocToPDF/
-├── Program.cs
-├── Core/          # Polling, parsers, PDF, processamento de arquivos
-├── Models/
-├── UI/            # TrayApp, MainForm
+├── Program.cs              # Modos: serviço | bandeja | standalone
+├── Core/                   # Polling, parsers, PDF, IPC
+├── UI/                     # TrayApp, MainForm
+├── install-tray-at-logon.ps1
 └── DocToPDF.conf
 ```
 
@@ -37,86 +67,37 @@ DocToPDF/
 dotnet build DocToPDF/DocToPDF.csproj
 ```
 
-## CI
-
-Push ou pull request em `main` dispara [.github/workflows/build.yml](.github/workflows/build.yml) (compilação Release no GitHub Actions).
-
-## Atualização rápida no Windows (script)
-
-Arquivo: `DocToPDF/update-and-restart.ps1`
-
-Executar no **PowerShell como Administrador**:
+## Atualização rápida no Windows
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\DocToPDF\repo\DocToPDF\update-and-restart.ps1 `
   -RepoRoot C:\DocToPDF\repo `
   -InstallDir C:\DocToPDF `
-  -Variant compressed `
-  -StartTrayUi
+  -Variant compressed
 ```
 
-O script:
-
-1. para o serviço `DocToPDF`
-2. encerra processos `DocToPDF.exe` antigos
-3. faz `git pull` na branch `main` do repositório
-4. executa `dotnet publish` (comprimido ou full)
-5. copia `DocToPDF.exe` e `DocToPDF.conf` para `C:\DocToPDF`
-6. inicia o serviço novamente
-7. opcionalmente abre a UI com `--ui`
+Depois do publish, execute `DocToPDF.exe` uma vez (ou use o atalho em Inicializar) para a bandeja.
 
 ## Publicação
 
-O executável parece “grande” porque o modo **self-contained** embute o runtime .NET 8 + WinForms + bibliotecas nativas do QuestPDF (Skia). O código do app em si é pequeno.
-
 | Modo | Tamanho aprox. | Precisa instalar .NET no PC? |
 |------|----------------|------------------------------|
-| Self-contained + compressão (recomendado) | **~78 MB** (um `.exe`) | Não |
+| Self-contained + compressão (recomendado) | **~78 MB** | Não |
 | Self-contained sem compressão | ~173 MB | Não |
-| Framework-dependent (pasta com DLLs) | **~21 MB** no total | Sim — [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) |
-
-### Recomendado (menor `.exe` sem depender do runtime)
+| Framework-dependent | **~21 MB** (pasta) | Sim |
 
 ```bash
 dotnet publish DocToPDF/DocToPDF.csproj /p:PublishProfile=win-x64-compressed
 ```
 
-Saída: `DocToPDF/bin/publish/win-x64-compressed/DocToPDF.exe`
+## Diagnóstico
 
-### Mínimo absoluto (exige runtime instalado)
-
-```bash
-dotnet publish DocToPDF/DocToPDF.csproj /p:PublishProfile=win-x64-framework-dependent
-```
-
-Copie a pasta inteira `win-x64-fdd` para o PC de destino (não só o `.exe` de ~150 KB).
-
-## Uso
-
-1. Execute `DocToPDF.exe` (modo interativo: ícone na bandeja).
-2. Abra o painel (duplo clique no ícone ou **Abrir Painel**).
-3. Configure os diretórios, salve e use **Iniciar Serviço** / **Processa Agora**.
-4. **Serviço Windows:** ao iniciar o serviço, o processamento fica em segundo plano e a **bandeja** abre na sessão do usuário logado. Use o painel para **Processa Agora** e salvar o `DocToPDF.conf`. **Sair** na bandeja fecha só a interface; o serviço continua.
-5. **Sem serviço:** execute `DocToPDF.exe` — bandeja e processamento no mesmo processo; **Sair** encerra o timer.
+- **`DocToPDF-service.log`** ao lado do `.exe` (ex.: `C:\DocToPDF\DocToPDF-service.log`)
+- Event Viewer → Aplicativo (`APPCRASH` no serviço)
 
 ## Amostras
 
-Arquivos de exemplo em `Samples/`:
-
-- `729494492026040001.xml` (encoding `iso-8859-1`)
-- `72949449-MIT-202604.json`
-- `bad.json` (inválido, para teste de erro)
-
-
-## Diagnóstico do serviço
-
-Se a UI mostrar *Serviço DocToPDF indisponível* ou o serviço parar sozinho:
-
-1. Abra o **Visualizador de Eventos** → **Logs do Windows** → **Aplicativo** (erros `DocToPDF.exe` / `APPCRASH`).
-2. Leia o arquivo **`DocToPDF-service.log`** ao lado do executável (ex.: `C:\DocToPDF\DocToPDF-service.log`).
-3. Reinicie o serviço após atualizar para a versão mais recente do `main`.
-
-## Verificação headless (Windows)
+Pasta `Samples/` — XML, JSON válido e `bad.json` para teste de erro.
 
 ```bash
 DocToPDF.exe --verify C:\caminho\para\Samples
