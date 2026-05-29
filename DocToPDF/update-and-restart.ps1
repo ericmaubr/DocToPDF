@@ -106,7 +106,7 @@ try {
 
     if ($StartTrayUi) {
         Write-Step "Abrindo interface de bandeja"
-        Start-Process -FilePath (Join-Path $InstallDir "DocToPDF.exe") -ArgumentList "--ui"
+        Start-Process -FilePath (Join-Path $InstallDir "DocToPDF.exe")
     }
 
     Write-Step "Concluído"
