@@ -1,0 +1,5 @@
+Each sub-project/repository in this workspace has its own `CLAUDE.md` and `MEMORY.md` files located in their respective root directories.
+
+1. When working on a task inside a specific sub-project, locate and read its local `CLAUDE.md` and `MEMORY.md` first.
+2. Always follow the guidelines, code style, and commands defined in that sub-project's `CLAUDE.md`.
+3. Whenever you complete a significant task or make a major architectural decision within a sub-project, proactively update its local `MEMORY.md` file.
