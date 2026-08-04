@@ -35,6 +35,10 @@ partial class MainForm
         pnlPolling = new Panel();
         numPolling = new NumericUpDown();
         lblPollingUnit = new Label();
+        lblPadronizarPdf = new Label();
+        pnlPadronizarPdf = new Panel();
+        chkPadronizarPdfAtivo = new CheckBox();
+        txtPadronizarPdfUrl = new TextBox();
         btnSave = new Button();
         btnProcessNow = new Button();
         lblLog = new Label();
@@ -54,13 +58,13 @@ partial class MainForm
 
         // Config table: label | textbox | browse
         tblConfig.ColumnCount = 3;
-        tblConfig.RowCount = 6;
+        tblConfig.RowCount = 7;
         tblConfig.Location = new Point(12, 34);
-        tblConfig.Size = new Size(576, 168);
+        tblConfig.Size = new Size(576, 196);
         tblConfig.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 155F));
         tblConfig.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         tblConfig.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36F));
-        for (var i = 0; i < 6; i++)
+        for (var i = 0; i < 7; i++)
             tblConfig.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
 
         ConfigureDirectoryRow(lblInput, "Diretório de Entrada", txtInput, btnInput, 0);
@@ -88,28 +92,46 @@ partial class MainForm
         tblConfig.Controls.Add(pnlPolling, 1, 5);
         tblConfig.SetColumnSpan(pnlPolling, 2);
 
+        lblPadronizarPdf.Text = "Padronizar PDF (OCR)";
+        lblPadronizarPdf.Dock = DockStyle.Fill;
+        lblPadronizarPdf.TextAlign = ContentAlignment.MiddleRight;
+        tblConfig.Controls.Add(lblPadronizarPdf, 0, 6);
+
+        pnlPadronizarPdf.Dock = DockStyle.Fill;
+        chkPadronizarPdfAtivo.Location = new Point(0, 5);
+        chkPadronizarPdfAtivo.AutoSize = true;
+        chkPadronizarPdfAtivo.Text = "Ativo";
+        txtPadronizarPdfUrl.Location = new Point(60, 2);
+        txtPadronizarPdfUrl.Width = 340;
+        var toolTipPadronizarPdf = new ToolTip();
+        toolTipPadronizarPdf.SetToolTip(txtPadronizarPdfUrl, "URL base do conta-tools-pdf, ex.: http://192.168.150.5/pdf");
+        pnlPadronizarPdf.Controls.Add(chkPadronizarPdfAtivo);
+        pnlPadronizarPdf.Controls.Add(txtPadronizarPdfUrl);
+        tblConfig.Controls.Add(pnlPadronizarPdf, 1, 6);
+        tblConfig.SetColumnSpan(pnlPadronizarPdf, 2);
+
         // Action buttons
-        btnSave.Location = new Point(12, 212);
+        btnSave.Location = new Point(12, 240);
         btnSave.Size = new Size(150, 30);
         btnSave.Text = "Salvar Configurações";
         btnSave.Click += BtnSave_Click;
 
-        btnProcessNow.Location = new Point(168, 212);
+        btnProcessNow.Location = new Point(168, 240);
         btnProcessNow.Size = new Size(130, 30);
         btnProcessNow.Text = "Processa Agora";
         btnProcessNow.Click += BtnProcessNow_Click;
 
         // Log
         lblLog.AutoSize = true;
-        lblLog.Location = new Point(12, 252);
+        lblLog.Location = new Point(12, 280);
         lblLog.Text = "Log de Eventos";
 
-        btnClearLog.Location = new Point(488, 248);
+        btnClearLog.Location = new Point(488, 276);
         btnClearLog.Size = new Size(100, 25);
         btnClearLog.Text = "Limpar Log";
         btnClearLog.Click += BtnClearLog_Click;
 
-        rtbLog.Location = new Point(12, 274);
+        rtbLog.Location = new Point(12, 302);
         rtbLog.Size = new Size(576, 88);
         rtbLog.ReadOnly = true;
         rtbLog.Font = new Font("Consolas", 9F);
@@ -119,13 +141,13 @@ partial class MainForm
 
         // Version / run mode
         lblVersion.AutoSize = true;
-        lblVersion.Location = new Point(12, 376);
+        lblVersion.Location = new Point(12, 404);
         lblVersion.ForeColor = Color.Gray;
         lblVersion.Font = new Font("Segoe UI", 8F);
 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(600, 400);
+        ClientSize = new Size(600, 428);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         Controls.Add(lblTitle);
@@ -187,6 +209,10 @@ partial class MainForm
     private Panel pnlPolling = null!;
     private NumericUpDown numPolling = null!;
     private Label lblPollingUnit = null!;
+    private Label lblPadronizarPdf = null!;
+    private Panel pnlPadronizarPdf = null!;
+    private CheckBox chkPadronizarPdfAtivo = null!;
+    private TextBox txtPadronizarPdfUrl = null!;
     private Button btnSave = null!;
     private Button btnProcessNow = null!;
     private Label lblLog = null!;

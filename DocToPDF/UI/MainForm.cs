@@ -50,6 +50,8 @@ public partial class MainForm : Form
         txtError.Text = s.ErrorDirectory;
         txtRobot.Text = s.RobotDirectory;
         numPolling.Value = Math.Clamp(s.PollingIntervalSeconds, (int)numPolling.Minimum, (int)numPolling.Maximum);
+        chkPadronizarPdfAtivo.Checked = s.PadronizarPdfAtivo;
+        txtPadronizarPdfUrl.Text = s.PadronizarPdfUrl;
     }
 
     private AppSettings ReadSettingsFromUi() => new()
@@ -59,7 +61,9 @@ public partial class MainForm : Form
         ProcessedDirectory = txtProcessed.Text.Trim(),
         ErrorDirectory = txtError.Text.Trim(),
         RobotDirectory = txtRobot.Text.Trim(),
-        PollingIntervalSeconds = (int)numPolling.Value
+        PollingIntervalSeconds = (int)numPolling.Value,
+        PadronizarPdfAtivo = chkPadronizarPdfAtivo.Checked,
+        PadronizarPdfUrl = txtPadronizarPdfUrl.Text.Trim()
     };
 
     private void BtnBrowse_Click(object? sender, EventArgs e)
