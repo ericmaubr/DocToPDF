@@ -45,6 +45,8 @@ partial class MainForm
         rtbLog = new RichTextBox();
         btnClearLog = new Button();
         lblVersion = new Label();
+        statusStrip = new StatusStrip();
+        lblStatusBar = new ToolStripStatusLabel();
         tblConfig.SuspendLayout();
         pnlPolling.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)numPolling).BeginInit();
@@ -145,9 +147,15 @@ partial class MainForm
         lblVersion.ForeColor = Color.Gray;
         lblVersion.Font = new Font("Segoe UI", 8F);
 
+        // Barra de status: fase atual do polling (verificando / aguardando + contagem regressiva)
+        lblStatusBar.Text = "";
+        lblStatusBar.Spring = true;
+        lblStatusBar.TextAlign = ContentAlignment.MiddleLeft;
+        statusStrip.Items.Add(lblStatusBar);
+
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(600, 428);
+        ClientSize = new Size(600, 452);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         Controls.Add(lblTitle);
@@ -158,6 +166,7 @@ partial class MainForm
         Controls.Add(btnClearLog);
         Controls.Add(rtbLog);
         Controls.Add(lblVersion);
+        Controls.Add(statusStrip);
         Name = "MainForm";
         StartPosition = FormStartPosition.CenterScreen;
         Text = "DocToPDF";
@@ -219,4 +228,6 @@ partial class MainForm
     private RichTextBox rtbLog = null!;
     private Button btnClearLog = null!;
     private Label lblVersion = null!;
+    private StatusStrip statusStrip = null!;
+    private ToolStripStatusLabel lblStatusBar = null!;
 }

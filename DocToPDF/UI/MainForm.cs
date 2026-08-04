@@ -10,6 +10,8 @@ public partial class MainForm : Form
     private readonly IDocToPDFBackend _backend;
     private readonly List<string> _logLines = new();
     private readonly System.Windows.Forms.Timer _processCooldownTimer;
+    private readonly System.Windows.Forms.Timer _countdownTimer;
+    private DateTime? _nextPollAt;
 
     public MainForm(SettingsStore settingsStore, IDocToPDFBackend backend)
     {
@@ -29,6 +31,10 @@ public partial class MainForm : Form
             btnProcessNow.Enabled = true;
             _processCooldownTimer.Stop();
         };
+
+        _countdownTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _countdownTimer.Tick += OnCountdownTick;
+        _countdownTimer.Start();
 
         LoadSettingsToUi();
         _backend.LogEvent += OnLogEvent;
@@ -116,7 +122,39 @@ public partial class MainForm : Form
         if (string.IsNullOrEmpty(message))
             return;
 
+        if (message.StartsWith(PollingService.StatusPrefix, StringComparison.Ordinal))
+        {
+            var phase = message[PollingService.StatusPrefix.Length..];
+            BeginInvoke(() => ApplyStatus(phase));
+            return;
+        }
+
         BeginInvoke(() => AppendLog(message));
+    }
+
+    private void ApplyStatus(string phase)
+    {
+        if (phase.StartsWith("Aguardando", StringComparison.Ordinal))
+        {
+            _nextPollAt = DateTime.Now.AddSeconds((double)numPolling.Value);
+            UpdateCountdownLabel();
+        }
+        else
+        {
+            _nextPollAt = null;
+            lblStatusBar.Text = phase;
+        }
+    }
+
+    private void OnCountdownTick(object? sender, EventArgs e) => UpdateCountdownLabel();
+
+    private void UpdateCountdownLabel()
+    {
+        if (_nextPollAt is not { } next)
+            return;
+
+        var remaining = Math.Max(0, (int)Math.Ceiling((next - DateTime.Now).TotalSeconds));
+        lblStatusBar.Text = $"Aguardando próxima verificação em {remaining}s";
     }
 
     private void AppendLog(string message)
@@ -157,6 +195,7 @@ public partial class MainForm : Form
         else
         {
             _backend.LogEvent -= OnLogEvent;
+            _countdownTimer.Stop();
         }
 
         base.OnFormClosing(e);

@@ -4,6 +4,13 @@ namespace DocToPDF.Core;
 
 public sealed class PollingService : IDisposable
 {
+    /// <summary>
+    /// Prefixo de mensagens de status ao vivo (fase do polling), distintas do histórico de
+    /// log — quem recebe via <see cref="LogEvent"/> decide mostrar numa barra de status em
+    /// vez de acumular no log. Atravessa IPC do mesmo jeito que qualquer outra linha de log.
+    /// </summary>
+    public const string StatusPrefix = "STATUS|";
+
     private readonly SettingsStore _settingsStore;
     private readonly FileProcessor _fileProcessor;
     private System.Threading.Timer? _timer;
@@ -82,6 +89,7 @@ public sealed class PollingService : IDisposable
             return;
         }
 
+        Log(StatusPrefix + "Verificando arquivos...");
         try
         {
             ReloadSettings();
@@ -95,6 +103,7 @@ public sealed class PollingService : IDisposable
         finally
         {
             Interlocked.Exchange(ref _processingGate, 0);
+            Log(StatusPrefix + "Aguardando próxima verificação.");
         }
     }
 
@@ -106,6 +115,7 @@ public sealed class PollingService : IDisposable
         if (Interlocked.CompareExchange(ref _processingGate, 1, 0) != 0)
             return;
 
+        Log(StatusPrefix + "Verificando arquivos...");
         try
         {
             ReloadSettings();
@@ -119,11 +129,18 @@ public sealed class PollingService : IDisposable
         finally
         {
             Interlocked.Exchange(ref _processingGate, 0);
+            Log(StatusPrefix + "Aguardando próxima verificação.");
         }
     }
 
     public void Log(string message)
     {
+        if (message.StartsWith(StatusPrefix, StringComparison.Ordinal))
+        {
+            LogEvent?.Invoke(this, message);
+            return;
+        }
+
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
         string formatted;
 
