@@ -8,6 +8,7 @@ public sealed class PollingService : IDisposable
     private readonly FileProcessor _fileProcessor;
     private System.Threading.Timer? _timer;
     private readonly object _timerLock = new();
+    private int _processingGate;
 
     public event EventHandler<string>? LogEvent;
 
@@ -75,6 +76,12 @@ public sealed class PollingService : IDisposable
 
     public void ProcessNow()
     {
+        if (Interlocked.CompareExchange(ref _processingGate, 1, 0) != 0)
+        {
+            Log("Processamento já em andamento — ignorando novo disparo.");
+            return;
+        }
+
         try
         {
             ReloadSettings();
@@ -85,10 +92,20 @@ public sealed class PollingService : IDisposable
             Log($"❌ Erro ao processar — {ex.Message}");
             ServiceLog.Error($"ProcessNow: {ex}");
         }
+        finally
+        {
+            Interlocked.Exchange(ref _processingGate, 0);
+        }
     }
 
     private void OnTimerCallback(object? state)
     {
+        // Evita rodar ProcessAll em paralelo com um ciclo anterior ainda em andamento
+        // (ex.: padronização de PDF via OCR mais lenta que o intervalo de polling) — isso
+        // enviaria requisições concorrentes ao conta-tools-pdf, que roda como processo único.
+        if (Interlocked.CompareExchange(ref _processingGate, 1, 0) != 0)
+            return;
+
         try
         {
             ReloadSettings();
@@ -98,6 +115,10 @@ public sealed class PollingService : IDisposable
         {
             Log($"❌ Erro no polling — {ex.Message}");
             ServiceLog.Error($"Timer: {ex}");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _processingGate, 0);
         }
     }
 
