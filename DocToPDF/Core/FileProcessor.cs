@@ -35,7 +35,8 @@ public sealed class FileProcessor
                 {
                     var ext = Path.GetExtension(f);
                     return ext.Equals(".xml", StringComparison.OrdinalIgnoreCase) ||
-                           ext.Equals(".json", StringComparison.OrdinalIgnoreCase);
+                           ext.Equals(".json", StringComparison.OrdinalIgnoreCase) ||
+                           ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase);
                 })
                 .OrderBy(f => f)
                 .ToList();
@@ -58,10 +59,16 @@ public sealed class FileProcessor
             if (!ValidateDirectories(fileName))
                 return;
 
+            var extension = Path.GetExtension(filePath);
+            if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                ProcessExternalPdf(filePath, fileName);
+                return;
+            }
+
             DocumentNode root;
             try
             {
-                var extension = Path.GetExtension(filePath);
                 root = extension.Equals(".xml", StringComparison.OrdinalIgnoreCase)
                     ? XmlParser.Parse(filePath)
                     : JsonParser.Parse(filePath);
@@ -104,6 +111,42 @@ public sealed class FileProcessor
         catch (Exception ex)
         {
             _log($"❌ {fileName} — {ex.Message}");
+            MoveToError(filePath);
+        }
+    }
+
+    private void ProcessExternalPdf(string filePath, string fileName)
+    {
+        if (!_settings.PadronizarPdfAtivo || string.IsNullOrWhiteSpace(_settings.PadronizarPdfUrl))
+        {
+            _log($"❌ {fileName} — padronização de PDF externo não está ativa (configure PadronizarPdfAtivo/PadronizarPdfUrl).");
+            MoveToError(filePath);
+            return;
+        }
+
+        try
+        {
+            var normalizado = PdfPadronizadorClient.Normalizar(_settings.PadronizarPdfUrl, filePath);
+            var outputPath = Path.Combine(_settings.OutputDirectory, fileName);
+            File.WriteAllBytes(outputPath, normalizado);
+
+            if (!string.IsNullOrWhiteSpace(_settings.RobotDirectory))
+            {
+                Directory.CreateDirectory(_settings.RobotDirectory);
+                var robotPath = Path.Combine(_settings.RobotDirectory, fileName);
+                File.Copy(outputPath, robotPath, overwrite: true);
+            }
+
+            var processedPath = Path.Combine(_settings.ProcessedDirectory, fileName);
+            if (File.Exists(processedPath))
+                File.Delete(processedPath);
+            File.Move(filePath, processedPath);
+
+            _log($"✅ {fileName} — padronizado via conta-tools-pdf.");
+        }
+        catch (Exception ex)
+        {
+            _log($"❌ {fileName} — falha ao padronizar via conta-tools-pdf: {ex.Message}");
             MoveToError(filePath);
         }
     }

@@ -76,6 +76,16 @@ public static class ProcessingVerifier
             return 1;
         }
 
+        // PDF externo cai em erro quando a padronização via conta-tools-pdf está desativada (default).
+        File.Copy(jsonPath, Path.Combine(input, "externo.pdf"));
+        processor.ProcessAll();
+
+        if (!File.Exists(Path.Combine(error, "externo.pdf")))
+        {
+            Console.Error.WriteLine("External PDF without PadronizarPdfAtivo was not moved to error directory.");
+            return 1;
+        }
+
         Console.WriteLine("Verification passed.");
         return 0;
     }

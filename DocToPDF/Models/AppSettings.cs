@@ -8,4 +8,6 @@ public class AppSettings
     public string ErrorDirectory { get; set; } = "";
     public string RobotDirectory { get; set; } = "";
     public int PollingIntervalSeconds { get; set; } = 30;
+    public bool PadronizarPdfAtivo { get; set; } = false;
+    public string PadronizarPdfUrl { get; set; } = "";
 }

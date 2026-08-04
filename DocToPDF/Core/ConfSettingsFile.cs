@@ -30,7 +30,9 @@ public static class ConfSettingsFile
             {
                 if (int.TryParse(v, out var seconds))
                     s.PollingIntervalSeconds = seconds;
-            }
+            },
+            ["PadronizarPdfAtivo"] = (s, v) => s.PadronizarPdfAtivo = bool.TryParse(v, out var ativo) && ativo,
+            ["PadronizarPdfUrl"] = (s, v) => s.PadronizarPdfUrl = v
         };
 
     public static AppSettings Load(string path)
@@ -73,6 +75,10 @@ public static class ConfSettingsFile
             $"DiretorioErros={settings.ErrorDirectory}",
             $"DiretorioRobo={settings.RobotDirectory}",
             $"IntervaloPollingSegundos={settings.PollingIntervalSeconds}",
+            "",
+            "# Padronização de PDFs externos via conta-tools-pdf (OCR). Opcional.",
+            $"PadronizarPdfAtivo={settings.PadronizarPdfAtivo}",
+            $"PadronizarPdfUrl={settings.PadronizarPdfUrl}",
             ""
         };
 
