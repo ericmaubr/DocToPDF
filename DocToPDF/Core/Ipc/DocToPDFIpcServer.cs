@@ -16,7 +16,31 @@ public sealed class DocToPDFIpcServer : IDisposable
 
     private const int LogHistoryMax = 500;
 
-    private readonly ConcurrentDictionary<Guid, StreamWriter> _logSubscribers = new();
+    /// <summary>
+    /// StreamWriter não é thread-safe pra escritas concorrentes: o loop de comandos desta
+    /// conexão (HandleClientAsync) e o broadcast de log (disparado por outra thread — o timer
+    /// de polling) podem escrever ao mesmo tempo no mesmo writer. Esse semáforo serializa toda
+    /// escrita de uma conexão, não importa qual caminho a originou.
+    /// </summary>
+    private sealed class ClientWriter(StreamWriter writer)
+    {
+        private readonly SemaphoreSlim _lock = new(1, 1);
+
+        public async Task WriteLineAsync(string line)
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                await writer.WriteLineAsync(line);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+    }
+
+    private readonly ConcurrentDictionary<Guid, ClientWriter> _logSubscribers = new();
     private readonly object _broadcastLock = new();
     private readonly LinkedList<string> _logHistory = new();
     private CancellationTokenSource? _cts;
@@ -75,12 +99,13 @@ public sealed class DocToPDFIpcServer : IDisposable
             using (server)
             {
                 using var reader = new StreamReader(server, Protocol, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-                using var writer = new StreamWriter(server, Protocol, leaveOpen: true) { AutoFlush = true };
+                using var rawWriter = new StreamWriter(server, Protocol, leaveOpen: true) { AutoFlush = true };
+                var writer = new ClientWriter(rawWriter);
 
                 string? line;
                 while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
                 {
-                    var response = ExecuteCommand(line.Trim(), clientId, writer);
+                    var response = await ExecuteCommandAsync(line.Trim(), clientId, writer);
                     await writer.WriteLineAsync(response);
                 }
             }
@@ -95,7 +120,7 @@ public sealed class DocToPDFIpcServer : IDisposable
         }
     }
 
-    private string ExecuteCommand(string command, Guid clientId, StreamWriter writer)
+    private async Task<string> ExecuteCommandAsync(string command, Guid clientId, ClientWriter writer)
     {
         if (_polling == null)
             return "ERR Serviço indisponível.";
@@ -116,7 +141,7 @@ public sealed class DocToPDFIpcServer : IDisposable
                 _polling.ReloadSettings();
                 return "OK";
             }),
-            "SUBSCRIBE_LOGS" => SubscribeLogs(clientId, writer),
+            "SUBSCRIBE_LOGS" => await SubscribeLogsAsync(clientId, writer),
             _ => "ERR Comando desconhecido."
         };
     }
@@ -133,28 +158,27 @@ public sealed class DocToPDFIpcServer : IDisposable
         }
     }
 
-    private string SubscribeLogs(Guid clientId, StreamWriter writer)
+    private async Task<string> SubscribeLogsAsync(Guid clientId, ClientWriter writer)
     {
-        // Sob o mesmo lock do broadcast: reproduz o histórico e registra o assinante
-        // atomicamente, sem perder nem duplicar linhas que cheguem nesse intervalo.
+        // Snapshot do histórico sob lock (protege _logHistory), mas escreve fora dele — a
+        // escrita em si já é serializada por ClientWriter, não precisa do _broadcastLock.
+        string[] history;
         lock (_broadcastLock)
         {
-            foreach (var line in _logHistory)
-            {
-                try
-                {
-                    // WriteLineAsync, não WriteLine: o pipe foi criado com PipeOptions.Asynchronous
-                    // (NamedPipeHost.CreateServer) — E/S síncrona nesse modo corrompe o stream
-                    // ("Pipe is broken" em toda leitura/escrita seguinte na mesma conexão).
-                    writer.WriteLineAsync(line).GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    return "ERR Falha ao enviar histórico.";
-                }
-            }
-
+            history = _logHistory.ToArray();
             _logSubscribers[clientId] = writer;
+        }
+
+        foreach (var line in history)
+        {
+            try
+            {
+                await writer.WriteLineAsync(line);
+            }
+            catch
+            {
+                return "ERR Falha ao enviar histórico.";
+            }
         }
 
         return "OK";
@@ -163,23 +187,29 @@ public sealed class DocToPDFIpcServer : IDisposable
     private void BroadcastLog(string message)
     {
         var line = $"LOG {message}";
+        List<KeyValuePair<Guid, ClientWriter>> subscribers;
+
         lock (_broadcastLock)
         {
             _logHistory.AddLast(line);
             while (_logHistory.Count > LogHistoryMax)
                 _logHistory.RemoveFirst();
 
-            foreach (var (id, writer) in _logSubscribers)
+            subscribers = _logSubscribers.ToList();
+        }
+
+        foreach (var (id, writer) in subscribers)
+        {
+            try
             {
-                try
-                {
-                    // WriteLineAsync, não WriteLine — ver comentário em SubscribeLogs.
-                    writer.WriteLineAsync(line).GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    _logSubscribers.TryRemove(id, out _);
-                }
+                // ClientWriter serializa com o loop de comandos da mesma conexão — sem isso,
+                // duas threads (esta e HandleClientAsync) escrevendo ao mesmo tempo no mesmo
+                // StreamWriter causa corrupção ("Pipe is broken") ou trava indefinidamente.
+                writer.WriteLineAsync(line).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                _logSubscribers.TryRemove(id, out _);
             }
         }
     }
