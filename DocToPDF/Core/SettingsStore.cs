@@ -98,5 +98,7 @@ public sealed class SettingsStore
         to.ErrorDirectory = from.ErrorDirectory;
         to.RobotDirectory = from.RobotDirectory;
         to.PollingIntervalSeconds = from.PollingIntervalSeconds;
+        to.PadronizarPdfAtivo = from.PadronizarPdfAtivo;
+        to.PadronizarPdfUrl = from.PadronizarPdfUrl;
     }
 }
