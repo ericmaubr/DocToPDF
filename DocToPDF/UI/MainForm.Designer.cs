@@ -136,7 +136,7 @@ partial class MainForm
         rtbLog.ReadOnly = true;
         rtbLog.Font = new Font("Consolas", 9F);
         rtbLog.BackColor = Color.White;
-        rtbLog.ScrollBars = RichTextBoxScrollBars.Vertical;
+        rtbLog.ScrollBars = RichTextBoxScrollBars.Both;
         rtbLog.WordWrap = false;
 
         // Version / run mode
