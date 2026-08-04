@@ -143,7 +143,10 @@ public sealed class DocToPDFIpcServer : IDisposable
             {
                 try
                 {
-                    writer.WriteLine(line);
+                    // WriteLineAsync, não WriteLine: o pipe foi criado com PipeOptions.Asynchronous
+                    // (NamedPipeHost.CreateServer) — E/S síncrona nesse modo corrompe o stream
+                    // ("Pipe is broken" em toda leitura/escrita seguinte na mesma conexão).
+                    writer.WriteLineAsync(line).GetAwaiter().GetResult();
                 }
                 catch
                 {
@@ -170,7 +173,8 @@ public sealed class DocToPDFIpcServer : IDisposable
             {
                 try
                 {
-                    writer.WriteLine(line);
+                    // WriteLineAsync, não WriteLine — ver comentário em SubscribeLogs.
+                    writer.WriteLineAsync(line).GetAwaiter().GetResult();
                 }
                 catch
                 {
