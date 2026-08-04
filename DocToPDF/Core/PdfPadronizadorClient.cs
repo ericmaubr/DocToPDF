@@ -12,9 +12,22 @@ public static class PdfPadronizadorClient
     {
         var url = baseUrl.TrimEnd('/') + "/converter";
 
-        using var content = new MultipartFormDataContent();
-        using var fileStream = File.OpenRead(pdfPath);
-        using var fileContent = new StreamContent(fileStream);
+        using var content = BuildContent(pdfPath);
+        using var response = Http.PostAsync(url, content).GetAwaiter().GetResult();
+        response.EnsureSuccessStatusCode();
+
+        return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Separado de <see cref="Normalizar"/> pra dar pra verificar o Content-Disposition
+    /// gerado sem precisar de rede (ver <see cref="Verify.ProcessingVerifier"/>).
+    /// </summary>
+    internal static MultipartFormDataContent BuildContent(string pdfPath)
+    {
+        var content = new MultipartFormDataContent();
+        var fileStream = File.OpenRead(pdfPath);
+        var fileContent = new StreamContent(fileStream);
         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
         content.Add(fileContent, "arquivo");
 
@@ -27,9 +40,6 @@ public static class PdfPadronizadorClient
             "Content-Disposition",
             $"form-data; name=\"arquivo\"; filename=\"{Path.GetFileName(pdfPath)}\"");
 
-        using var response = Http.PostAsync(url, content).GetAwaiter().GetResult();
-        response.EnsureSuccessStatusCode();
-
-        return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        return content;
     }
 }

@@ -86,6 +86,33 @@ public static class ProcessingVerifier
             return 1;
         }
 
+        // Regressão: nome de arquivo com acento não pode virar MIME encoded-word no
+        // Content-Disposition (o parser multipart do conta-tools-pdf não decodifica isso —
+        // ver PdfPadronizadorClient.BuildContent). Verificado sem rede: o próprio
+        // MultipartFormDataContent sabe se serializar pra string, headers inclusos.
+        var accentedPdf = Path.Combine(input, "Prev de férias.pdf");
+        File.WriteAllBytes(accentedPdf, "%PDF-stub"u8.ToArray());
+
+        using (var content = PdfPadronizadorClient.BuildContent(accentedPdf))
+        {
+            // Latin-1, não UTF-8: é como o HttpClient serializa valores de header no fio
+            // (ReadAsStringAsync decodifica como UTF-8 e corrompe o acento na verificação).
+            var bytes = content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            var serialized = System.Text.Encoding.Latin1.GetString(bytes);
+
+            if (!serialized.Contains("filename=\"Prev de férias.pdf\"", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine("Content-Disposition não tem o filename acentuado literal.");
+                return 1;
+            }
+
+            if (serialized.Contains("=?utf-8?B?", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine("Content-Disposition caiu de volta pro MIME encoded-word que quebra o servidor.");
+                return 1;
+            }
+        }
+
         Console.WriteLine("Verification passed.");
         return 0;
     }
