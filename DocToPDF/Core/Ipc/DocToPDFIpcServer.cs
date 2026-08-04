@@ -107,7 +107,10 @@ public sealed class DocToPDFIpcServer : IDisposable
             "START" => Run(() => { _polling.StartTimer(); return "OK"; }),
             "STOP" => Run(() => { _polling.StopTimer(); return "OK"; }),
             "RESTART_TIMER" => Run(() => { _polling.RestartTimer(); return "OK"; }),
-            "PROCESS_NOW" => Run(() => { _polling.ProcessNow(); return "OK"; }),
+            // Roda em segundo plano: ProcessNow pode chamar um serviço externo (ex.: OCR) e
+            // demorar minutos. Bloquear aqui travaria a fila de comandos desta conexão (ex.:
+            // GET_STATUS periódico do tray), estourando timeouts e dessincronizando o IPC.
+            "PROCESS_NOW" => Run(() => { Task.Run(() => _polling.ProcessNow()); return "OK"; }),
             "RELOAD_SETTINGS" => Run(() =>
             {
                 _polling.ReloadSettings();
