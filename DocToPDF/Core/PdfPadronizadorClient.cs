@@ -16,7 +16,16 @@ public static class PdfPadronizadorClient
         using var fileStream = File.OpenRead(pdfPath);
         using var fileContent = new StreamContent(fileStream);
         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
-        content.Add(fileContent, "arquivo", Path.GetFileName(pdfPath));
+        content.Add(fileContent, "arquivo");
+
+        // Content-Disposition manual: o overload Add(content, name, fileName) do .NET codifica
+        // nomes com acento em MIME encoded-word (RFC 2047) + RFC 5987, e o parser multipart do
+        // FastAPI/Starlette não decodifica nenhum dos dois — lê o filename literal (o base64),
+        // que não termina em ".pdf", e o servidor rejeita com 400 achando que não é PDF.
+        fileContent.Headers.Remove("Content-Disposition");
+        fileContent.Headers.TryAddWithoutValidation(
+            "Content-Disposition",
+            $"form-data; name=\"arquivo\"; filename=\"{Path.GetFileName(pdfPath)}\"");
 
         using var response = Http.PostAsync(url, content).GetAwaiter().GetResult();
         response.EnsureSuccessStatusCode();

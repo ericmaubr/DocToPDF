@@ -10,8 +10,8 @@
     <ApplicationIcon>Resources\appicon.ico</ApplicationIcon>
     <RootNamespace>DocToPDF</RootNamespace>
     <AssemblyName>DocToPDF</AssemblyName>
-    <Version>0.4.14</Version>
-    <AssemblyInformationalVersion>0.4.14</AssemblyInformationalVersion>
+    <Version>0.4.15</Version>
+    <AssemblyInformationalVersion>0.4.15</AssemblyInformationalVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
