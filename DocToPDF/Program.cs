@@ -39,6 +39,28 @@ internal static class Program
         RunInteractiveTray(attachToService);
     }
 
+    /// <summary>
+    /// ArgumentNullException("dc") no WmPaint é o GDI ainda reinicializando logo após acordar de
+    /// hibernação/sleep — transitório. Engolir a exceção (via ThreadException) evita o crash,
+    /// mas deixa a região marcada como pintada mesmo sem desenhar nada, então a janela fica em
+    /// branco pra sempre sem isso: força um redesenho depois de dar um tempo pro GDI se recuperar.
+    /// </summary>
+    private static void RecoverFromPaintFailure(Exception ex)
+    {
+        if (ex is not ArgumentNullException { ParamName: "dc" })
+            return;
+
+        var timer = new System.Windows.Forms.Timer { Interval = 300 };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            timer.Dispose();
+            foreach (var form in Application.OpenForms.Cast<Form>().ToList())
+                form.Invalidate(true);
+        };
+        timer.Start();
+    }
+
     private static bool IsServiceMode(string[] args) =>
         args.Contains("--service", StringComparer.OrdinalIgnoreCase) || !Environment.UserInteractive;
 
@@ -54,7 +76,11 @@ internal static class Program
         // sua vez pode falhar ao montar (GetStockIcon retorna handle inválido logo após acordar
         // de hibernação/sleep, antes do GDI terminar de reinicializar), virando uma SEGUNDA
         // exceção não tratada que mata o processo sem deixar rastro nenhum do erro original.
-        Application.ThreadException += (_, e) => ServiceLog.Fatal(e.Exception, "UI ThreadException");
+        Application.ThreadException += (_, e) =>
+        {
+            ServiceLog.Fatal(e.Exception, "UI ThreadException");
+            RecoverFromPaintFailure(e.Exception);
+        };
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             if (e.ExceptionObject is Exception ex)
