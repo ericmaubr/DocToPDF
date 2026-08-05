@@ -11,9 +11,6 @@ public sealed class PollingService : IDisposable
     /// </summary>
     public const string StatusPrefix = "STATUS|";
 
-    /// <summary>Espera antes da primeira verificação, pra dar tempo do sistema carregar.</summary>
-    private const int StartupDelayMs = 5000;
-
     private readonly SettingsStore _settingsStore;
     private readonly FileProcessor _fileProcessor;
     private System.Threading.Timer? _timer;
@@ -62,11 +59,9 @@ public sealed class PollingService : IDisposable
         {
             _timer?.Dispose();
             var intervalMs = Math.Max(1, _settingsStore.Settings.PollingIntervalSeconds) * 1000;
-            _timer = new System.Threading.Timer(OnTimerCallback, null, StartupDelayMs, intervalMs);
+            _timer = new System.Threading.Timer(OnTimerCallback, null, intervalMs, intervalMs);
             IsRunning = true;
         }
-
-        Log(StatusPrefix + "Sistema iniciando...");
     }
 
     public void StopTimer()
