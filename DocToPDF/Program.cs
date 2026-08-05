@@ -48,6 +48,25 @@ internal static class Program
             $"RunInteractiveTray: attach={attachToService} UserInteractive={Environment.UserInteractive} " +
             $"session={Environment.GetEnvironmentVariable("SESSIONNAME") ?? "?"} exe={Environment.ProcessPath}");
 
+        ServiceLog.Initialize();
+
+        // Sem isso, uma exceção não tratada na UI cai no diálogo padrão do WinForms — que por
+        // sua vez pode falhar ao montar (GetStockIcon retorna handle inválido logo após acordar
+        // de hibernação/sleep, antes do GDI terminar de reinicializar), virando uma SEGUNDA
+        // exceção não tratada que mata o processo sem deixar rastro nenhum do erro original.
+        Application.ThreadException += (_, e) => ServiceLog.Fatal(e.Exception, "UI ThreadException");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+                ServiceLog.Fatal(ex, "UI UnhandledException");
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            ServiceLog.Fatal(e.Exception, "UI UnobservedTaskException");
+            e.SetObserved();
+        };
+
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         ApplicationConfiguration.Initialize();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
